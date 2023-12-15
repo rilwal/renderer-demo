@@ -17,6 +17,8 @@
 #include "renderer/mesh.hpp"
 #include "renderer/shader.hpp"
 
+#include "renderer/vertex_buffer.hpp"
+#include "renderer/index_buffer.hpp"
 
 struct Vertex {
     glm::vec3 position;
@@ -132,11 +134,9 @@ int main() {
     c.rotation = { -3.9, -0.6 };
     c.projection = glm::perspective(45.0, 16.0 / 9.0, 0.01, 100.0);
 
-    // TODO(URGENT): Implement a good wrapper for index buffers!!!
-    uint32_t index_buffer;
-    glCreateBuffers(1, &index_buffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, cube_1->indices.size() * sizeof(uint32_t), cube_1->indices.data(), GL_STATIC_DRAW);
+    
+    IndexBuffer index_buffer(BufferUsage::STATIC, ShaderDataType::U32);
+    index_buffer.set_data(cube_1->indices);
 
     uint32_t command_buffer;
     glCreateBuffers(1, &command_buffer);
@@ -144,6 +144,7 @@ int main() {
 
     VertexBuffer matrices(cube_1->vao_id());
     matrices.set_layout({ {"MVP", ShaderDataType::Mat4}, {"Model", ShaderDataType::Mat4} }, 1, 2);
+
 
     glBindVertexArray(cube_1->vao_id());
 
@@ -173,31 +174,7 @@ int main() {
 
         ImGui::EndGroup();
 
-
-        ImGui::DragFloat3("Position", (float*)&position, 0.01);
-        ImGui::DragFloat3("Scale", (float*)&scale, 0.01);
-        ImGui::DragFloat3("Rotation", (float*)&rotation, 0.01);
-
         ImGui::End();
-
-
-        const glm::mat4 pos_mat = glm::translate(glm::mat4(1), position);
-        const glm::mat4 rot_mat = glm::mat4_cast(quat_rotation);
-        const glm::mat4 scale_mat = glm::scale(glm::mat4(1), scale);
-
-        const glm::mat4 model = pos_mat * rot_mat * scale_mat;
-
-        const auto mvp = vp * model;
-
-
-        cartoon_shader->uniforms["_mvp"].set(mvp);
-        cartoon_shader->uniforms["_model"].set(model);
-
-        cartoon_shader->use();
-
-       // GL_ERROR_CHECK();
-        //glDrawElements(GL_TRIANGLES, cube_1->indices.size(), GL_UNSIGNED_INT, 0);
-        //GL_ERROR_CHECK();
 
         std::vector<RenderCommand> command_list;
         std::vector<glm::mat4> matrix_data; // interleave mvp, model etc..
@@ -208,11 +185,6 @@ int main() {
 
             const auto mvp = vp * model;
             
-            cartoon_shader->uniforms["_mvp"].set(mvp);
-            cartoon_shader->uniforms["_model"].set(model);
-
-            cartoon_shader->use();
-
             command_list.push_back({
                 (uint32_t)cube_1->indices.size(),
                 1,
@@ -223,13 +195,7 @@ int main() {
 
             matrix_data.push_back(mvp);
             matrix_data.push_back(model);
-
-            //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-            //glDrawElements(GL_TRIANGLES, m.mesh->indices.size(), GL_UNSIGNED_INT, 0);
         });
-
-        cartoon_shader->uniforms["_mvp"].set(mvp);
-        cartoon_shader->uniforms["_model"].set(model);
 
         cartoon_shader->use();
 
@@ -239,7 +205,7 @@ int main() {
         matrices.set_data<glm::mat4>(matrix_data);
         VertexBuffer::bind_multiple(cube_1->vbo(), matrices);
             
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+        index_buffer.bind();
 
         glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, command_list.size(), 0);
         GL_ERROR_CHECK();

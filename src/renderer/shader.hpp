@@ -66,14 +66,22 @@ struct Uniform {
 #define UniformGetter(ct, dt, m) template<> auto& get<ct>() { return _data.m; }; template<> auto& get_default<ct>() { return _default.m; }
 	UniformGetter(float,  F32, f);
 	UniformGetter(double, F64, d);
+
+	UniformGetter(int8_t, I8, i8);
+	UniformGetter(int16_t, I16, i16);
+	UniformGetter(int32_t, I32, i32);
+
+	UniformGetter(uint8_t,  U8, u8);
+	UniformGetter(uint16_t, U16, u16);
+	UniformGetter(uint32_t, U32, u32);
+
 	UniformGetter(glm::vec2, Vec2, v2);
 	UniformGetter(glm::vec3, Vec3, v3);
 	UniformGetter(glm::vec4, Vec4, v4);
 	UniformGetter(glm::ivec2, IVec2, iv2);
 	UniformGetter(glm::ivec3, IVec3, iv3);
 	UniformGetter(glm::ivec4, IVec4, iv4);
-	UniformGetter(uint32_t, U32, u32);
-	UniformGetter(int32_t, I32, i32);
+
 	UniformGetter(glm::mat2, Mat2, m2);
 	UniformGetter(glm::mat3, Mat3, m3);
 	UniformGetter(glm::mat4, Mat4, m4);
@@ -82,14 +90,22 @@ struct Uniform {
 #define UniformSetter(ct, dt, m) template<> void set<ct>(ct val) { changed = true; _data.m = val; }template<> void set_default<ct>(ct val) { _default.m = val; }
 	UniformSetter(float, F32, f);
 	UniformSetter(double, F64, d);
+
+	UniformSetter(int8_t,  I8, i8);
+	UniformSetter(int16_t, I16, i16);
+	UniformSetter(int32_t, I32, i32);
+
+	UniformSetter(uint8_t,  U8, u8);
+	UniformSetter(uint16_t, U16, u16);
+	UniformSetter(uint32_t, U32, u32);
+
 	UniformSetter(glm::vec2, Vec2, v2);
 	UniformSetter(glm::vec3, Vec3, v3);
 	UniformSetter(glm::vec4, Vec4, v4);
 	UniformSetter(glm::ivec2, IVec2, iv2);
 	UniformSetter(glm::ivec3, IVec3, iv3);
 	UniformSetter(glm::ivec4, IVec4, iv4);
-	UniformSetter(uint32_t, U32, u32);
-	UniformSetter(int32_t, I32, i32);
+
 	UniformSetter(glm::mat2, Mat2, m2);
 	UniformSetter(glm::mat3, Mat3, m3);
 	UniformSetter(glm::mat4, Mat4, m4);
@@ -109,7 +125,12 @@ private:
 		glm::ivec3 iv3;
 		glm::ivec4 iv4;
 
+		uint8_t   u8;
+		uint16_t u16;
 		uint32_t u32;
+
+		int8_t   i8;
+		int16_t i16;
 		int32_t i32;
 		
 		glm::mat2 m2;

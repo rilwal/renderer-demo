@@ -66,9 +66,9 @@ void main() {
 	float diff = max(0, dot(normalize(vertex_normal), lightDir));
 
 
-	//float distance_2 = dot(light_pos - vertex_position_worldspace.xyz, light_pos - vertex_position_worldspace.xyz);
-	//diff *= light_intensity;
-	//diff /= distance_2;
+	float distance_2 = dot(light_pos - vertex_position_worldspace.xyz, light_pos - vertex_position_worldspace.xyz);
+	diff *= light_intensity;
+	diff /= distance_2;
 	
 	diff += ambient;
 
