@@ -72,10 +72,17 @@ project "rendererer-demo"
       "vendor/glfw/include",
       "vendor/flecs",
       "vendor/imgui",
-      "vendor/watcher/include"
+      "vendor/watcher/include",
+      "vendor/fastgltf/include"
+    }
+
+    libdirs 
+    {
+      "vendor/fastgltf/build/minsizerel"
     }
 
     links 
     {
-        "GLFW"
+        "GLFW",
+        "fastgltf.lib"
     }

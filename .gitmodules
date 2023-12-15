@@ -13,3 +13,6 @@
 [submodule "vendor/watcher"]
 	path = vendor/watcher
 	url = https://github.com/e-dant/watcher
+[submodule "vendor/fastgltf"]
+	path = vendor/fastgltf
+	url = https://github.com/spnda/fastgltf

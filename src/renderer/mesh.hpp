@@ -3,9 +3,14 @@
 #include "asset_manager.hpp"
 
 #include <glm.hpp>
+#include "flecs.h"
 
 #include "util.hpp"
+#include "ecs_componets.hpp"
+
 #include "vertex_buffer.hpp"
+#include "index_buffer.hpp"
+#include "shader.hpp"
 
 
 // To be used only for e.g. primitve generation!
@@ -56,24 +61,27 @@ struct Mesh : IAsset {
 	void load_from_intermediate_mesh(const IntermediateMesh& im);
 	
 
-	void upload_gl_data();
-
-
 	void reload() override;
 	void unload() override;
 
-	void bind_vbo();
 
-	int32_t vao_id() { return m_vbo->vao_id(); }
-	int32_t vbo_id() { return m_vbo->vbo_id(); }
 	
-	VertexBuffer& vbo() { return *m_vbo; } // FIXME: Danger Danger!
 
 private:
-	std::unique_ptr<VertexBuffer> m_vbo;
 
 };
 
 
+struct RenderCommand {
+	uint32_t count;
+	uint32_t instance_count;
+	uint32_t first_index;
+	int32_t base_vertex;
+	uint32_t base_instance;
+};
+
+
+
 Ref<Mesh> construct_quad_mesh(glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d);
 Ref<Mesh> construct_cube_mesh(float size);
+Ref<Mesh> construct_cube_sphere(float size, int subdivisions);

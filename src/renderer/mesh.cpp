@@ -1,19 +1,22 @@
 
 #include "mesh.hpp"
 
-#include "util.hpp"
-
+#include <filesystem>
 #include <unordered_map>
 
+#include "fastgltf/parser.hpp"
+#include "fastgltf/types.hpp"
+
+#include "util.hpp"
+
+
 Mesh::Mesh() : IAsset("Mesh") {
-	m_vbo = std::make_unique<VertexBuffer>();
 }
 
 Mesh::~Mesh() {
 }
 
 Mesh::Mesh(Mesh&& other) : IAsset("Mesh") {
-	m_vbo = std::move(other.m_vbo);
 }
 
 namespace std {
@@ -359,14 +362,21 @@ void Mesh::load_from_obj_string(const char* src) {
 
 	// TODO: Generate tangents and bitangents,
 	//		 and set the has_tangents and has_bitangents to true
-
-
-	upload_gl_data();
 }
 
 void Mesh::load_from_file(const char* filename) {
-	std::vector<uint8_t> src = load_file(filename);
-	load_from_obj_string((const char*)src.data());
+	auto path = std::filesystem::path(filename);
+
+	if (path.extension() == ".obj") {
+		std::vector<uint8_t> src = load_file(filename);
+		load_from_obj_string((const char*)src.data());
+	}
+	else if (path.extension() == ".gltf") {
+		
+	}
+	else {
+		std::cerr << "Can't load model from unknown format: " << path.extension() << "\n";
+	}
 }
 
 void Mesh::load_from_intermediate_mesh(const IntermediateMesh& im) {
@@ -379,59 +389,6 @@ void Mesh::load_from_intermediate_mesh(const IntermediateMesh& im) {
 	}
 
 	has_normals = true;
-
-	upload_gl_data();
-}
-
-void Mesh::upload_gl_data() {
-	VertexBufferLayout vbl = {};
-
-	vbl.append({ "position", ShaderDataType::Vec3 });
-	if (has_normals)		vbl.append({ "normal",		ShaderDataType::Vec3 });
-	if (has_uvs)			vbl.append({ "uvs",			ShaderDataType::Vec2 });
-	if (has_tangents)		vbl.append({ "tangent",		ShaderDataType::Vec3 });
-	if (has_bitangents)		vbl.append({ "bitangent",	ShaderDataType::Vec3 });
-
-	m_vbo->set_layout(vbl);
-
-	int32_t stride = m_vbo->get_stride();
-
-	// Create a buffer to create our GL compatible data in
-	// Later on if we do our own binary model format, it will probably
-	// primarily consist of this binary data with some kind of fast
-	// and light compression
-
-	// TODO: Think about a safer and more extensible format for this.
-	std::vector<uint8_t> gl_data;
-	gl_data.resize(stride * vertices.size());
-	for (size_t i = 0; i < vertices.size(); i++) {
-		size_t offset = 0;
-
-		memcpy(&gl_data[i * stride + offset], &vertices[i], sizeof(glm::vec3));
-		offset += sizeof(glm::vec3);
-
-		if (has_normals) {
-			memcpy(&gl_data[i * stride + offset], &normals[i], sizeof(glm::vec3));
-			offset += sizeof(glm::vec3);
-		}
-
-		if (has_uvs) {
-			memcpy(&gl_data[i * stride + offset], &uvs[i], sizeof(glm::vec2));
-			offset += sizeof(glm::vec2);
-		}
-
-		if (has_tangents) {
-			memcpy(&gl_data[i * stride + offset], &tans[i], sizeof(glm::vec3));
-			offset += sizeof(glm::vec3);
-		}
-
-		if (has_bitangents) {
-			memcpy(&gl_data[i * stride + offset], &bitans[i], sizeof(glm::vec3));
-			offset += sizeof(glm::vec3);
-		}
-	}
-
-	m_vbo->set_data(gl_data);
 }
 
 
@@ -444,6 +401,3 @@ void Mesh::unload() {
 
 }
 
-void Mesh::bind_vbo() {
-	m_vbo->bind();
-}

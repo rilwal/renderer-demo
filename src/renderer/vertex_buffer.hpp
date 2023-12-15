@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "types.hpp"
+#include "buffer.hpp"
 
 struct VertexAttribute {
 	std::string name;
@@ -31,7 +32,31 @@ struct VertexBufferLayout {
 
 };
 
-class VertexBuffer {
+
+class VertexArray {
+public:
+	VertexArray() {
+		glCreateVertexArrays(1, &m_gl_id);
+	}
+
+	virtual ~VertexArray() {
+		glDeleteVertexArrays(1, &m_gl_id);
+	}
+
+	operator const uint32_t() {
+		return m_gl_id;
+	}
+
+	void bind() {
+		glBindVertexArray(m_gl_id);
+	}
+
+private:
+	uint32_t m_gl_id;
+};
+
+
+class VertexBuffer : public Buffer {
 public:
 	VertexBuffer(uint32_t vao_id=-1);
 	~VertexBuffer();
@@ -39,8 +64,13 @@ public:
 	VertexBuffer(const VertexBuffer& other) = delete;
 		
 	void bind(int binding_index=0);
+
 	void set_layout(VertexBufferLayout layout, int binding_index=0, int base_attrib=0);
-	void set_data(void* data, size_t len);
+
+	void resize(size_t size);
+
+	void set_data(void* data, size_t count);
+
 
 	inline int32_t get_stride() {
 		return m_stride;
@@ -51,19 +81,21 @@ public:
 		set_data(data.data(), sizeof(T) * data.size());
 	}
 
-	uint32_t vao_id() { return m_vao_id; }
-	uint32_t vbo_id() { return m_vbo_id; }
-
-
-	static void bind_multiple(const VertexBuffer& a, const VertexBuffer& b) {
-		glVertexArrayVertexBuffer(a.m_vao_id, 0, a.m_vbo_id, 0, a.m_stride);
-		glVertexArrayVertexBuffer(b.m_vao_id, 1, b.m_vbo_id, 0, b.m_stride);
+	void set_subdata(void* data, size_t offset, size_t count) {
+		Buffer::set_subdata(data, offset, count);
 	}
+
+	template<typename T>
+	inline void set_subdata(std::vector<T> data, size_t offset) {
+		set_subdata(data.data(), offset, data.size() * sizeof(T));
+	}
+
+	uint32_t vao_id() { return m_vao_id; }
+	uint32_t vbo_id() { return Buffer::get_id(); }
 
 
 private:
 	uint32_t m_vao_id;
-	uint32_t m_vbo_id;
 
 	VertexBufferLayout _layout;
 

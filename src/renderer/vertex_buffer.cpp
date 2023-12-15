@@ -6,43 +6,39 @@
 
 #include "util.hpp"
 
-VertexBuffer::VertexBuffer(uint32_t vao_id)
+VertexBuffer::VertexBuffer(uint32_t vao_id) : Buffer(BufferUsage::STATIC)
 {
 	printf("Vertex Buffer Constructor\n");
 	if (vao_id == -1) {
 		glCreateVertexArrays(1, &vao_id);
+		GL_ERROR_CHECK();
 	}
 
 	m_vao_id = vao_id;
 
-	glCreateBuffers(1, &m_vbo_id);
+	glBindVertexArray(m_vao_id);
+	GL_ERROR_CHECK();
 
-	printf("Genereated Buffers %d and %d\n", m_vao_id, m_vbo_id);
+	printf("Genereated Buffers %d and %d\n", m_vao_id, Buffer::get_id());
 }
 
 
 VertexBuffer::~VertexBuffer()
 {
 	printf("Destroyed VBO\n");
-	glDeleteBuffers(1, &m_vbo_id);
 	glDeleteVertexArrays(1, &m_vao_id);
 }
 
 
 void VertexBuffer::bind(int binding_index) {
-	//glBindVertexArray(m_vao_id);
+	glVertexArrayVertexBuffer(m_vao_id, binding_index, Buffer::get_id(), 0, m_stride);
 	GL_ERROR_CHECK();
-
-	glVertexArrayVertexBuffer(m_vao_id, binding_index, m_vbo_id, 0, m_stride);
-	GL_ERROR_CHECK();
-
-	//glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
 }
 
 
 void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int base_attrib) {
+
 	_layout = layout;
-		bind();
 
 		int32_t size = 0;
 
@@ -61,6 +57,7 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int 
 
 			if (dt == ShaderDataType::Mat4) {
 				glVertexArrayBindingDivisor(m_vao_id, binding_index, 1);
+				GL_ERROR_CHECK();
 
 				// for Mat4 we need to do something special!
 				for (int i = 0; i < 4; i++) {
@@ -70,8 +67,13 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int 
 
 
 					glEnableVertexArrayAttrib(m_vao_id, index + i);
+					GL_ERROR_CHECK();
+
 					glVertexArrayAttribFormat(m_vao_id, index + i, 4, GetGLPrimitiveType(dt), false, offset + (4 * sizeof(float)) * i);
+					GL_ERROR_CHECK();
+
 					glVertexArrayAttribBinding(m_vao_id, index + i, binding_index); // TODO: ASSUMPTION THAT IFF MAT4 ¨ DIVISOR = 1 is bad
+					GL_ERROR_CHECK();
 				}
 
 				index += 4;
@@ -98,16 +100,17 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int 
 			}
 		}
 
-		glVertexArrayVertexBuffer(m_vao_id, binding_index, m_vbo_id, 0, size);
-		GL_ERROR_CHECK();
-
 		m_stride = size;
 }
 
 
+void VertexBuffer::resize(size_t size) {
+	Buffer::resize(size);
+}
+
+
 void VertexBuffer::set_data(void* data, size_t len) {
-	glNamedBufferData(m_vbo_id, len, data, GL_STATIC_DRAW);
-	GL_ERROR_CHECK();
+	Buffer::set_data(data, len);
 }
 
 

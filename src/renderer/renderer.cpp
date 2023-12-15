@@ -10,9 +10,7 @@
 
 #include "util.hpp"
 
-struct {
-	
-} s_Data;
+
 
 const char* glsl_version = "#version 460";
 
@@ -91,7 +89,7 @@ void Renderer::end_frame() {
 	ImGui::EndFrame();
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
+	
 	glfwSwapBuffers(window);
 	GL_ERROR_CHECK();
 
@@ -112,7 +110,8 @@ int Renderer::get_window_width() {
 
 int Renderer::get_window_height() {
 	int height;
-	
+	glfwGetWindowSize(window, &height, nullptr);
+
 	return height;
 }
 
@@ -126,6 +125,12 @@ Window::Window(int width, int height, std::string title) {
 
 
 	platform_window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
+
+	glfwSetWindowSizeCallback(platform_window, [](GLFWwindow* win, int w, int h) {
+		glViewport(0, 0, w, h);
+		glm::ivec2 window_size_i = glm::ivec2(w, h);
+	});
+
 }
 
 Window::~Window() {

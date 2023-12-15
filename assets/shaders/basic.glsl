@@ -2,14 +2,13 @@
 
 layout(location = 0) in vec3 vertex_position;
 layout(location = 1) in vec3 normal;
-layout(location = 2) in mat4 mvp;
-layout(location = 6) in mat4 model;
+layout(location = 2) in mat4 model;
 
 
 out vec4 vertex_position_worldspace;
 out vec3 vertex_normal;
 
-
+uniform mat4 vp;
 uniform float time;
 
 #step(0.001)
@@ -17,10 +16,11 @@ uniform float time;
 uniform vec3 scale = vec3(1);
 
 void main() {
-	vec4 vp = vec4(vertex_position * scale, 1);
+	mat4 mvp = vp * model;
+	vec4 vertex_pos = vec4(vertex_position * scale, 1);
 
-	vertex_position_worldspace = model * vp;
-	gl_Position = mvp * vp;
+	vertex_position_worldspace = model * vertex_pos;
+	gl_Position = mvp * vertex_pos;
 
 	vertex_normal = (inverse(transpose(model)) * vec4(normal, 1)).xyz;
 }
