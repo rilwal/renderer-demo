@@ -4,6 +4,9 @@
 *.vcxproj
 *.vcxproj.filters
 
+#ignore models and stuff because they are big! (and possibly not owned by me!)
+assets/models/*
+
 
 # Created by https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode,git,premake-gmake
 # Edit at https://www.toptal.com/developers/gitignore?templates=visualstudio,visualstudiocode,git,premake-gmake
