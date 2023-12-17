@@ -7,6 +7,12 @@
 
 #include "imgui.h"
 
+
+#define WUFFS_IMPLEMENTATION
+#include "wuffs.h"
+#undef WUFFS_IMPLEMENTATION
+
+
 std::vector<uint8_t> load_file(std::string filename, size_t offset, size_t len, int retries) {
 	 FILE* file;
 	 std::vector<uint8_t> contents;
@@ -80,31 +86,46 @@ std::string gl_error_name(uint32_t error_code) {
 // This section contains some basic parsing functions, probably should replace this with something better later!!
 // Skip until the next non-whitespace character
 void skip_whitespace(const char*& it) {
-	while (it && std::isspace(*it)) it++;
+	while (it && *it && std::isspace(*it)) it++;
 }
 
 
 void skip_whitespace_not_nl(const char*& it) {
-	while (it && std::isspace(*it) && *it != '\n' && *it != '\r') it++;
+	while (it && *it && std::isspace(*it) && *it != '\n' && *it != '\r') it++;
 }
 
 
 
 void skip_until_whitespace(const char*& it) {
-	while (it && !std::isspace(*it)) it++;
+	while (it && *it && !std::isspace(*it)) it++;
 }
 
 
 std::string get_next_token(const char*& it) {
 	const char* it2 = it;
-	skip_until_whitespace(it2);
+	while (it2 && *it2 && !std::isspace(*it2) && *it2 != ';') it2++;
 	return std::string(it, it2);
+}
+
+
+std::string consume_next_token(const char*& it) {
+	const char* it2 = it;
+	while (it && *it && !std::isspace(*it) && *it != ';') it++;
+	return std::string(it2, it);
+}
+
+
+std::string consume_string(const char*& it) {
+	consume_token(it, "\"");
+	const char* start = it;
+	while (it && *it && *it != '\"') it++;
+	return std::string(start, it++);
 }
 
 
 // Skip until the next newline character
 void skip_to_newline(const char*& it) {
-	while (*it != '\n') it++;
+	while (it && *it && *it != '\n') it++;
 }
 
 
@@ -183,6 +204,7 @@ bool maybe_consume_int(const char*& it, int& i) {
 		return true;
 	}
 }
+
 
 
 

@@ -10,6 +10,10 @@
 
 #include "glad/gl.h"
 
+
+
+
+
 // References!
 template<typename T>
 using Ref = std::shared_ptr<T>;
@@ -55,6 +59,8 @@ bool check_token(const char*& it, const std::string & str);
 
 bool consume_token(const char*& it, const std::string & str);
 bool consume_glsl_type(const char*& it);
+std::string consume_next_token(const char*& it);
+std::string consume_string(const char*& it);
 
 float consume_float(const char*& it);
 int consume_int(const char*& it);

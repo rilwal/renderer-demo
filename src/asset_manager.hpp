@@ -17,6 +17,8 @@
 #include <string>
 #include <concepts>
 #include <wtr/watcher.hpp>
+#undef max //Watcher includes windows.h, which defines this macro, which conflicts with std::numeric_limits
+#undef min
 
 #include "util.hpp"
 

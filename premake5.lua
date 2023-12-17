@@ -16,22 +16,6 @@ workspace "rendererer-demo"
       optimize "On"
 
 
-    
--- project "flecs"
---     kind "StaticLib"
-    
---     language "C"
---     cdialect "C99"
-
---     defines { "flecs_STATIC", "flecs_EXPORTS" }
---     files
---     {
---         "vendor/flecs/flecs.c",
---     }
---     includedirs {
---         "vendor/flecs/include"
---     }
-
 
 project "GLFW"
    kind "StaticLib"
@@ -73,16 +57,26 @@ project "rendererer-demo"
       "vendor/flecs",
       "vendor/imgui",
       "vendor/watcher/include",
-      "vendor/fastgltf/include"
-    }
+      "vendor/fastgltf/include",
+      "vendor/stb"
+   }
 
-    libdirs 
-    {
-      "vendor/fastgltf/build/minsizerel"
-    }
+    filter "configurations:Debug"
+      libdirs 
+      {
+         "vendor/fastgltf/build/Debug"
+      }
+
+   filter "configurations:Release"
+      libdirs 
+      {
+         "vendor/fastgltf/build/minsizerel"
+      }
+   filter {}
 
     links 
     {
         "GLFW",
-        "fastgltf.lib"
+        "fastgltf",
+        "fastgltf_simdjson"
     }

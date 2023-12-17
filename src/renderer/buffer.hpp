@@ -24,9 +24,10 @@ public:
 
 	operator GLenum() {
 		switch (m_value) {
-		case STATIC: return GL_STATIC_DRAW;
-		case STREAM: return GL_STREAM_DRAW;
+			case STATIC: return GL_STATIC_DRAW;
+			case STREAM: return GL_STREAM_DRAW;
 		}
+		return GL_INVALID_ENUM;
 	}
 
 private:
@@ -116,11 +117,19 @@ public:
 	}
 
 	// Append some data to a buffer!
-	uint32_t extend(void* data, size_t len) {
-		uint32_t offset = m_size;
+	size_t extend(void* data, size_t len) {
+		size_t offset = m_size;
 		set_subdata(data, offset, len);
 		return offset;
+	}
 
+	// Push an element to the back of a buffer,
+	//	and return it's index
+	template <typename T>
+	size_t push_back(T element) {
+		size_t offset = m_size;
+		set_subdata(&element, offset, sizeof(T));
+		return offset;
 	}
 
 	template <typename T>

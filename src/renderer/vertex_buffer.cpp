@@ -87,7 +87,14 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int 
 				glEnableVertexArrayAttrib(m_vao_id, index);
 				GL_ERROR_CHECK();
 
-				glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), false, offset);
+				if (dt == ShaderDataType::U32) {
+					glVertexArrayAttribIFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), offset);
+
+				}
+				else {
+					glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), false, offset);
+
+				}
 				GL_ERROR_CHECK();
 
 				glVertexArrayAttribBinding(m_vao_id, index, binding_index);

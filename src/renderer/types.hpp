@@ -23,6 +23,9 @@ enum class ShaderDataType {
 
 	IVec2, IVec3, IVec4,
 
+	Sampler2D,
+	Texture2D = Sampler2D,
+
 	Unknown=-1
 };
 
@@ -41,7 +44,9 @@ enum class ShaderDataType {
 	DO(ShaderDataType::I32) \
 	DO(ShaderDataType::U8) \
 	DO(ShaderDataType::U16) \
-	DO(ShaderDataType::U32) 
+	DO(ShaderDataType::U32) \
+	DO(ShaderDataType::Sampler2D)
+
 
 
 constexpr ShaderDataType GetShaderDataType(GLenum dt) {
@@ -66,6 +71,8 @@ constexpr ShaderDataType GetShaderDataType(GLenum dt) {
 		case GL_FLOAT_MAT2: return ShaderDataType::Mat2;
 		case GL_FLOAT_MAT3: return ShaderDataType::Mat3;
 		case GL_FLOAT_MAT4: return ShaderDataType::Mat4;
+
+		case GL_SAMPLER_2D: return ShaderDataType::Sampler2D;
 	}
 
 	return ShaderDataType::Unknown;
@@ -101,6 +108,9 @@ constexpr GLenum GetGLPrimitiveType(ShaderDataType dt) {
 		case ShaderDataType::U32:	return GL_UNSIGNED_INT;
 
 		case ShaderDataType::Bool: return GL_BOOL;
+
+		case ShaderDataType::Sampler2D: return GL_UNSIGNED_INT;
+
 	}
 
 	assert(false, "Unknown Data Type");
@@ -150,6 +160,9 @@ constexpr int32_t GetGLPrimitiveCount(ShaderDataType dt) {
 	case ShaderDataType::U8:	return 1;
 	case ShaderDataType::U16:	return 1;
 	case ShaderDataType::U32:	return 1;
+
+	case ShaderDataType::Sampler2D: return 1;
+
 	}
 	assert(false, "Unknown Data Type");
 	return -1;
@@ -189,6 +202,8 @@ SHADER_TYPE(ShaderDataType::IVec3, glm::ivec3);
 SHADER_TYPE(ShaderDataType::IVec4, glm::ivec4);
 
 SHADER_TYPE(ShaderDataType::Bool, int32_t);
+
+SHADER_TYPE(ShaderDataType::Sampler2D, uint32_t);
 #undef SHADER_TYPE
 
 template<ShaderDataType dt>
@@ -250,6 +265,8 @@ constexpr const char* GetDataTypeName(ShaderDataType t){
 	case ShaderDataType::IVec3:	return "IVec3";
 	case ShaderDataType::IVec4:	return "IVec4";
 	case ShaderDataType::Bool:	return "Bool";
+	case ShaderDataType::Sampler2D: return "Tex2D";
+
 	default: return "Unknown";
 	}
 }
@@ -266,3 +283,11 @@ constexpr const char* GetDataTypeName(ShaderDataType t){
 constexpr size_t getDataSize(ShaderDataType dt) {
 	return GetGLPrimitiveSize(GetGLPrimitiveType(dt)) * GetGLPrimitiveCount(dt);
 }
+
+
+
+using TextureHandle = uint32_t;
+using MeshHandle = uint32_t;
+using MaterialHandle = uint32_t;
+
+constexpr MaterialHandle default_material = 0;

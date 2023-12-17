@@ -6,14 +6,32 @@
 #include "flecs.h"
 
 #include "util.hpp"
+#include "renderer/types.hpp"
 
 extern flecs::world ecs;
 
 
+// We wanna just directly set our transformation matrcices!
+struct TransformComponent {
+    glm::mat4 transform;
+
+    TransformComponent() : transform() {};
+
+    TransformComponent(glm::mat4 other) {
+        transform = other;
+    }
+
+    operator glm::mat4() const {
+        return transform;
+    }
+};
+
 struct Position {
     glm::vec3 position;
 
-    inline void operator=(const glm::vec3& other) {
+    Position() : position(0.0) {};
+
+    Position (glm::vec3 other) {
         position = other;
     }
 
@@ -29,6 +47,16 @@ struct Position {
 struct Scale {
     glm::vec3 scale;
 
+    Scale() : scale(1.0) {};
+
+    Scale(float n) {
+        scale = glm::vec3(n);
+    }
+
+    Scale(glm::vec3 other) {
+        scale = other;
+    }
+
     inline const glm::mat4 mat4() const {
         return glm::scale(glm::mat4(1), scale);
     }
@@ -39,29 +67,32 @@ struct Scale {
 };
 
 struct Rotation {
-    glm::vec3 rotation;
+    glm::quat rotation;
 
-    inline operator const glm::vec3& () const {
-        return rotation;
-    }
+    Rotation() : rotation(1, 0, 0, 0) {};
 
-    inline glm::quat quat() const {
-        return glm::quat(rotation);
-    }
 
-    inline glm::mat4 mat4() const {
-        return glm::mat4_cast(quat());
+    Rotation(glm::quat other) {
+        rotation = other;
     }
 
     inline operator glm::quat() const {
-        return quat();
+        return rotation;
+    }
+
+    inline glm::mat4 mat4() const {
+        return glm::mat4_cast(rotation);
     }
 };
 
-struct MeshComponent {
-    uint32_t h;
-    
-    inline operator uint32_t() const {
-        return h;
+
+// A model will be a set of mesh, material pairs
+struct Model {
+    std::vector<std::pair<MeshHandle, MaterialHandle>> meshes;
+
+    Model() : meshes() {};
+
+    Model(MeshHandle mesh_handle, MaterialHandle material_handle = default_material) {
+        meshes.push_back({ mesh_handle, material_handle });
     }
 };
