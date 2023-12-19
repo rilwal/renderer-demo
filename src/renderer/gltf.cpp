@@ -1,4 +1,7 @@
 
+
+#include <future>
+
 #include "gltf.hpp"
 
 #include "glm.hpp"
@@ -16,6 +19,16 @@
 #include "renderer.hpp"
 
 
+// Represents an 2D image, for example read from a .png
+struct Image {
+    uint32_t width;
+    uint32_t height;
+    uint32_t channels;
+
+    std::vector<uint8_t> data;
+};
+
+
 uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
     if (!m_texture_map.contains(texture_idx)) {
         auto& texture = m_asset.textures[texture_idx];
@@ -25,13 +38,7 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
         //      Might crash!!!
         auto& image = m_asset.images[*texture.imageIndex];
 
-        // Let's try the simplest implementation: bindless textures
-        // It's probably better to use a virtual texture atlas or a teture array though!
-        uint32_t texture_id = 0;
-        uint32_t sampler_id = 0;
 
-        glCreateTextures(GL_TEXTURE_2D, 1, &texture_id);
-        glCreateSamplers(1, &sampler_id);
 
         std::string png_src;
 
@@ -93,7 +100,16 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
         std::vector<uint8_t> image_data;
         image_data.resize(image_len);
 
+        #pragma omp parallel 
         spng_decode_image(ctx, image_data.data(), image_data.size(), fmt, 0);
+
+        // Let's try the simplest implementation: bindless textures
+        // It's probably better to use a virtual texture atlas or a teture array though!
+        uint32_t texture_id = 0;
+        uint32_t sampler_id = 0;
+
+        glCreateTextures(GL_TEXTURE_2D, 1, &texture_id);
+        glCreateSamplers(1, &sampler_id);
 
         glBindTexture(GL_TEXTURE_2D, texture_id);
         glTexImage2D(GL_TEXTURE_2D, 0, gl_internal_format, ihdr.width, ihdr.height, 0, gl_format, GL_UNSIGNED_BYTE, image_data.data());
@@ -268,22 +284,12 @@ void GLTF::iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity p
         if (node.meshIndex) {
             size_t mesh_index = *node.meshIndex;
             Model m = get_model(mb, mesh_index);
-                
-            mb.add_model_to_entity(node_entity, m);
+            node_entity.set<Model>(m);
         }
 
         if (node.lightIndex) {
             Light l = get_light(*node.lightIndex);
-            glm::vec3 T;
-            glm::quat R;
-            glm::vec3 S;
-            glm::vec3 skew;
-            glm::vec4 perspective;
-
-            glm::decompose(global_transform, S, R, T, skew, perspective);
-
-            l.position = T;
-            mb.register_light(l);
+            node_entity.set<Light>(l);
         }
 
         if (node.children.size()) {

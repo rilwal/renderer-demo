@@ -42,7 +42,8 @@ project "rendererer-demo"
     kind "ConsoleApp" -- Console app for now, until we have some log / debugging utility.
     language "C++"
     cppdialect "C++latest"
-
+    openmp "On"
+    
     defines {
       "SPNG_USE_MINIZ"
     }

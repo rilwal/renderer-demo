@@ -10,7 +10,7 @@
 
 #include "util.hpp"
 
-
+std::vector<MainThreadTask> g_tasks;
 
 const char* glsl_version = "#version 460";
 

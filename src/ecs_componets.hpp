@@ -21,6 +21,14 @@ struct TransformComponent {
         transform = other;
     }
 
+    auto& operator[](size_t idx) {
+        return transform[idx];
+    }
+
+    const auto& operator[](size_t idx) const {
+        return transform[idx];
+    }
+
     operator glm::mat4() const {
         return transform;
     }
@@ -94,5 +102,21 @@ struct Model {
 
     Model(MeshHandle mesh_handle, MaterialHandle material_handle = default_material) {
         meshes.push_back({ mesh_handle, material_handle });
+    }
+};
+
+
+// This is very experimental!!!
+struct Velocity {
+    glm::vec3 velocity;
+
+    Velocity() : velocity(0.0) {};
+
+    Velocity(glm::vec3 other) {
+        velocity = other;
+    }
+
+    inline operator const glm::vec3& () const {
+        return velocity;
     }
 };

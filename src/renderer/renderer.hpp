@@ -36,6 +36,7 @@ struct GLFWwindow;
 
 #include <string>
 #include <initializer_list>
+#include <functional>
 
 #include <glm.hpp>
 #include "flecs.h"
@@ -92,6 +93,17 @@ private:
 
 
 
+// This is a bad thing, make it better!
+// Executes a function on the main thread
+struct MainThreadTask {
+	std::function<void(void*)> callback;
+	void* parameter;
+};
+
+extern std::vector<MainThreadTask> g_tasks;
+
+
+
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
 // Limitations: All meshes must have the same vertex specification!!!
@@ -124,6 +136,9 @@ public:
 		m_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 1, 4);
 
 		m_draw_query = ecs.query_builder<const TransformComponent, const Model>()
+			.build();
+
+		m_light_query = ecs.query_builder<const TransformComponent, const Light>()
 			.build();
 
 		Material def = { glm::vec3(0.8) };
@@ -190,11 +205,6 @@ public:
 		return index;
 	}
 
-
-	void add_model_to_entity(flecs::entity& e, const Model& m) {
-		e.set<Model>(m);
-	}
-
 	// TODO: take in a camera and generate vp
 	inline void render(flecs::world& ecs, const Camera& camera) {
 		std::vector<RenderCommand> command_list;
@@ -229,6 +239,13 @@ public:
 				}
 			}
 		});
+		
+		m_light_buffer.soft_clear();
+
+		m_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light) {
+			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+			m_light_buffer.push_back(light.STD140(world_pos));
+		});
 
 
 		static bool show_shader_config = true;
@@ -255,6 +272,9 @@ public:
 
 		ImGui::End();
 
+
+		
+
 		m_command_buffer.set_data(command_list);
 		m_per_idx_buffer.set_data(per_instance_data);
 
@@ -279,11 +299,6 @@ public:
 		
 
 		GL_ERROR_CHECK()
-	}
-
-	void register_light(Light l) {
-		// TODO: Add some kind of way to remove the light again!!!
-		m_light_buffer.push_back(l);
 	}
 
 
@@ -326,6 +341,7 @@ private:
 	IndexBuffer m_light_buffer;
 
 	flecs::query<const TransformComponent, const Model> m_draw_query;
+	flecs::query<const TransformComponent, const Light> m_light_query;
 
 	Ref<Shader> m_main_shader;
 };

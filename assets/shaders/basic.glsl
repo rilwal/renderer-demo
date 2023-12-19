@@ -96,11 +96,11 @@ uniform float specular_strength = 0.5;
 const float PI = 3.141;
 
 layout(std140) uniform Lights {
-	Light lights[8];
+	Light lights[20];
 };
 
 layout(std140) uniform Materials {
-	Material materials[8];
+	Material materials[1024];
 };
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0) {
@@ -192,7 +192,7 @@ void main() {
 
 	vec3 lo = vec3(0);
 
-	for (int i = 0; i < 8; i++) {
+	for (int i = 0; i < 20; i++) {
 		Light l = lights[i];
 
 		vec3 L = normalize(l.position - vertex_position_worldspace);
@@ -201,7 +201,7 @@ void main() {
 		float distance = length(l.position - vertex_position_worldspace);
 		float attenuation = 1.0 / (distance * distance);
 
-		vec3 radiance = l.color * attenuation;
+		vec3 radiance = l.color * l.intensity * attenuation;
 
 
 		float NDF = DistributionGGX(N, H, roughness);

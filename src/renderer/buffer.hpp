@@ -54,6 +54,22 @@ public:
 		m_gl_id = 0;
 	}
 
+
+
+	// This function sets m_size of the buffer to zero without actually re-allocating anything
+	// this means future uses of push_back will overwrite old data, but it's not really going
+	// to delete any of the data, and old data might be accessed still.
+	void soft_clear() {
+		m_size = 0;
+	}
+
+
+	// This will clear the buffer, and reallocate it to 1K
+	void clear() {
+		glBufferData(m_gl_id, 1024, nullptr, m_usage);
+	}
+
+
 	void resize(size_t size) {
 		std::cerr << "Resize buffer " << m_gl_id << ": " << m_reserved_size << " -> " << size << "\n";
 		if (m_size != 0) {
@@ -106,7 +122,7 @@ public:
 
 		glNamedBufferSubData(m_gl_id, offset, size, data);
 
-		if (min_size > m_size) m_size = offset + size;
+		if (min_size > m_size) m_size = min_size;
 		GL_ERROR_CHECK();
 
 	}
