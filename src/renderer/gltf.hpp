@@ -4,8 +4,9 @@
 #include <map>
 
 #include "fastgltf/types.hpp"
-
 #include "ecs_componets.hpp"
+
+#include "light.hpp"
 
 #include <string>
 #include <initializer_list>
@@ -21,6 +22,7 @@ public:
 	Model get_model(MeshBundle& mb, size_t mesh_idx);
 	uint32_t get_material(MeshBundle& mb, size_t material_idx);
 	uint64_t get_texture(MeshBundle& mb, size_t texture_idx);
+	Light get_light(size_t light_idx);
 
 	void iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity parent);
 	flecs::entity load(std::filesystem::path path, flecs::entity root, MeshBundle& mb);

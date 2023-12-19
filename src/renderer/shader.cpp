@@ -219,7 +219,6 @@ uint32_t Shader::load_shader_src(GLenum type, const char* it, int& line) {
 			}
 
 		}
-
 		else {
 			skip_to_newline(it);
 			skip_whitespace(it);

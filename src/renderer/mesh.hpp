@@ -43,7 +43,7 @@ struct Mesh : IAsset {
 	std::vector<glm::vec3> normals;
 	std::vector<glm::vec2> uvs;
 	std::vector<glm::vec3> bitans;
-	std::vector<glm::vec3> tans;
+	std::vector<glm::vec4> tans;
 
 
 	bool has_normals = false;

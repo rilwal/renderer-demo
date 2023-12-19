@@ -51,6 +51,7 @@ struct GLFWwindow;
 #include "mesh.hpp"
 #include "material.hpp"
 #include "camera.hpp"
+#include "light.hpp"
 
 
 class Window {
@@ -261,6 +262,10 @@ public:
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, material_buffer.get_id());
 		glUniformBlockBinding(m_main_shader->get_id(), uniform_block_binding_index, 0);
 
+		uint32_t light_uniform_block_binding_index = glGetUniformBlockIndex(m_main_shader->get_id(), "Lights");
+		glBindBufferBase(GL_UNIFORM_BUFFER, 1, m_light_buffer.get_id());
+		glUniformBlockBinding(m_main_shader->get_id(), light_uniform_block_binding_index, 1);
+
 		m_vertex_array.bind();
 		m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
 		m_vertex_buffer.bind(0);
@@ -275,6 +280,12 @@ public:
 
 		GL_ERROR_CHECK()
 	}
+
+	void register_light(Light l) {
+		// TODO: Add some kind of way to remove the light again!!!
+		m_light_buffer.push_back(l);
+	}
+
 
 	inline uint32_t get_rendered_tri_count() {
 		return m_rendered_tri_count;
@@ -312,6 +323,7 @@ private:
 	Buffer material_buffer;
 
 	IndexBuffer m_index_buffer;
+	IndexBuffer m_light_buffer;
 
 	flecs::query<const TransformComponent, const Model> m_draw_query;
 

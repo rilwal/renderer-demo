@@ -22,8 +22,6 @@
 
 #include "stb_image.h"
 
-#include "wuffs.h"
-
 #include "asset_manager.hpp"
 #include "ecs_componets.hpp"
 
@@ -291,6 +289,12 @@ int main() {
 
         // Spawn a classic sphere grid!
 
+        auto balls = ecs.entity("Balls")
+            .add<Rotation>()
+            .add<Scale>()
+            .set<Position>(glm::vec3{20, 0, 0})
+            .child_of(root_node);
+
         constexpr int grid_size = 6;
         for (int x = 0; x < grid_size; x++) {
             for (int y = 0; y < grid_size; y++) {
@@ -301,7 +305,7 @@ int main() {
                 Model model(sphere_mesh, material);
 
                 ecs.entity()
-                    .child_of(root_node)
+                    .child_of(balls)
                     .add<Rotation>()
                     .set<Scale>(0.8)
                     .set<Position>(glm::vec3{ x * 2, y * 2, 0 })

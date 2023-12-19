@@ -3,6 +3,7 @@
 
 #include "glm.hpp"
 #include "gtx/quaternion.hpp"
+#include "gtx/matrix_decompose.hpp"
 
 #include "fastgltf/parser.hpp"
 #include "fastgltf/glm_element_traits.hpp"
@@ -10,6 +11,7 @@
 #include "fastgltf/tools.hpp"
 
 #include "stb_image.h"
+#include "spng.h"
 
 #include "renderer.hpp"
 
@@ -24,39 +26,81 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
         auto& image = m_asset.images[*texture.imageIndex];
 
         // Let's try the simplest implementation: bindless textures
-        // It's probably better to use a virutal texture atlas or a teture array though!
+        // It's probably better to use a virtual texture atlas or a teture array though!
         uint32_t texture_id = 0;
         uint32_t sampler_id = 0;
 
         glCreateTextures(GL_TEXTURE_2D, 1, &texture_id);
         glCreateSamplers(1, &sampler_id);
 
-        int w, h, channels;
-        uint8_t* data = nullptr;
+        std::string png_src;
 
+        spng_ctx* ctx = spng_ctx_new(0);
 
         if (auto image_buffer = std::get_if<fastgltf::sources::Vector>(&image.data); image_buffer) {
-            data = stbi_load_from_memory(image_buffer->bytes.data(), image_buffer->bytes.size(), &w, &h, &channels, 4);
-
-            glBindTexture(GL_TEXTURE_2D, texture_id);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-            stbi_image_free(data);
-
-            glGenerateTextureMipmap(texture_id);
+            png_src = "Internal Buffer";
+            spng_set_png_buffer(ctx, image_buffer->bytes.data(), image_buffer->bytes.size());
         }
 
         if (auto image_uri = std::get_if<fastgltf::sources::URI>(&image.data); image_uri) {
             std::filesystem::path path = image_uri->uri.fspath();
             std::filesystem::path cwd_relative_path = m_asset_dir.string() + "/" + path.string();
 
-            data = stbi_load(cwd_relative_path.string().c_str(), &w, &h, &channels, 4);
+            png_src = cwd_relative_path.string();
 
-            glBindTexture(GL_TEXTURE_2D, texture_id);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-            stbi_image_free(data);
-
-            glGenerateTextureMipmap(texture_id);
+            spng_set_png_file(ctx, fopen(png_src.c_str(), "rb"));
         }
+
+        spng_ihdr ihdr = {};
+        int error = spng_get_ihdr(ctx, &ihdr) != 0;
+        if (error) {
+            fprintf(stderr, "Error decoding PNG header (%s): %s\n", png_src.c_str(), spng_strerror(error));
+            return 0;
+        }
+
+        
+        int fmt = 0;
+        int gl_format = 0;
+        int gl_internal_format = 0;
+
+        switch (ihdr.color_type) {
+        case SPNG_COLOR_TYPE_GRAYSCALE:
+            fmt = SPNG_FMT_G8;
+            gl_format = GL_RED;
+            gl_internal_format = GL_RED;
+            break;
+        case SPNG_COLOR_TYPE_GRAYSCALE_ALPHA:
+            fmt = SPNG_FMT_GA8;
+            gl_format = GL_RG;
+            gl_internal_format = GL_RG;
+            break;
+        case SPNG_COLOR_TYPE_TRUECOLOR:
+            fmt = SPNG_FMT_RGB8;
+            gl_format = GL_RGB;
+            gl_internal_format = GL_RGB;
+            break;
+        case SPNG_COLOR_TYPE_TRUECOLOR_ALPHA:
+            fmt = SPNG_FMT_RGBA8;
+            gl_format = GL_RGBA;
+            gl_internal_format = GL_RGBA;
+            break;
+        }
+
+        size_t image_len;   
+
+        spng_decoded_image_size(ctx, fmt, &image_len);
+
+        std::vector<uint8_t> image_data;
+        image_data.resize(image_len);
+
+        spng_decode_image(ctx, image_data.data(), image_data.size(), fmt, 0);
+
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glTexImage2D(GL_TEXTURE_2D, 0, gl_internal_format, ihdr.width, ihdr.height, 0, gl_format, GL_UNSIGNED_BYTE, image_data.data());
+
+        image_data.clear();
+
+        glGenerateTextureMipmap(texture_id);
 
         if (texture.samplerIndex) {
             auto& sampler = m_asset.samplers[*texture.samplerIndex];
@@ -164,7 +208,7 @@ Model GLTF::get_model(MeshBundle& mb, size_t mesh_idx) {
                 }
                 else if (name == "TANGENT") {
                     m->tans.resize(accessor.count);
-                    fastgltf::copyFromAccessor<glm::vec3>(m_asset, accessor, m->tans.data());
+                    fastgltf::copyFromAccessor<glm::vec4>(m_asset, accessor, m->tans.data());
                 }
                 else {
                     // std::cerr << "Unused primitive attribute: " << name << "\n";
@@ -180,6 +224,17 @@ Model GLTF::get_model(MeshBundle& mb, size_t mesh_idx) {
 
     return m_model_map[mesh_idx];
 }
+
+
+Light GLTF::get_light(size_t light_idx) {
+    auto& light = m_asset.lights[light_idx];
+
+    return {
+        .color = glm::vec3(light.color[0], light.color[1], light.color[2]),
+        .intensity = light.intensity
+    };
+}
+
 
 void GLTF::iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity parent) {
     for (auto& node_index : node_list) {
@@ -213,8 +268,22 @@ void GLTF::iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity p
         if (node.meshIndex) {
             size_t mesh_index = *node.meshIndex;
             Model m = get_model(mb, mesh_index);
-
+                
             mb.add_model_to_entity(node_entity, m);
+        }
+
+        if (node.lightIndex) {
+            Light l = get_light(*node.lightIndex);
+            glm::vec3 T;
+            glm::quat R;
+            glm::vec3 S;
+            glm::vec3 skew;
+            glm::vec4 perspective;
+
+            glm::decompose(global_transform, S, R, T, skew, perspective);
+
+            l.position = T;
+            mb.register_light(l);
         }
 
         if (node.children.size()) {
@@ -227,7 +296,7 @@ flecs::entity GLTF::load(std::filesystem::path path, flecs::entity parent, MeshB
     m_asset_dir = path.parent_path();
     m_path = path;
 
-    fastgltf::Parser parser;
+    fastgltf::Parser parser (fastgltf::Extensions::KHR_lights_punctual);
     fastgltf::GltfDataBuffer data;
     data.loadFromFile(path);
 

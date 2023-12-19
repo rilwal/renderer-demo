@@ -1,7 +1,8 @@
 workspace "rendererer-demo"
-   configurations { "Debug", "Release" }
+   configurations { "Debug", "OptimizedDebug", "Release" }
    architecture "x86_64"
-
+   vectorextensions "avx2"
+   
    flags
 	{
 		"MultiProcessorCompile"
@@ -11,9 +12,14 @@ workspace "rendererer-demo"
       defines { "DEBUG" }
       symbols "On"
 
+   filter "configurations:OptimizedDebug"
+      defines { "DEBUG" }
+      optimize "On"
+      symbols "On"
+
    filter "configurations:Release"
       defines { "NDEBUG" }
-      optimize "On"
+      optimize "Full"
 
 
 
@@ -37,6 +43,10 @@ project "rendererer-demo"
     language "C++"
     cppdialect "C++latest"
 
+    defines {
+      "SPNG_USE_MINIZ"
+    }
+
     files 
     {
       "src/**.cpp",
@@ -45,7 +55,9 @@ project "rendererer-demo"
       "vendor/glad/src/gl.c",
       "vendor/imgui/*.cpp",
       "vendor/imgui/backends/imgui_impl_opengl3.cpp",
-      "vendor/imgui/backends/imgui_impl_glfw.cpp"
+      "vendor/imgui/backends/imgui_impl_glfw.cpp",
+      "vendor/spng/spng.c",
+      "vendor/miniz/miniz.c"
     }
 
     includedirs 
@@ -58,7 +70,10 @@ project "rendererer-demo"
       "vendor/imgui",
       "vendor/watcher/include",
       "vendor/fastgltf/include",
-      "vendor/stb"
+      "vendor/stb",
+      "vendor/spng",
+      "vendor/miniz"
+
    }
 
     filter "configurations:Debug"

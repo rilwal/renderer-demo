@@ -8,10 +8,6 @@
 #include "imgui.h"
 
 
-#define WUFFS_IMPLEMENTATION
-#include "wuffs.h"
-#undef WUFFS_IMPLEMENTATION
-
 
 std::vector<uint8_t> load_file(std::string filename, size_t offset, size_t len, int retries) {
 	 FILE* file;
@@ -111,7 +107,11 @@ std::string get_next_token(const char*& it) {
 std::string consume_next_token(const char*& it) {
 	const char* it2 = it;
 	while (it && *it && !std::isspace(*it) && *it != ';') it++;
-	return std::string(it2, it);
+	std::string result = std::string(it2, it);
+
+	skip_whitespace_not_nl(it);
+
+	return result;
 }
 
 
@@ -119,7 +119,11 @@ std::string consume_string(const char*& it) {
 	consume_token(it, "\"");
 	const char* start = it;
 	while (it && *it && *it != '\"') it++;
-	return std::string(start, it++);
+
+	const char* end = it + 1;
+	skip_whitespace_not_nl(++it);
+
+	return std::string(start, end);
 }
 
 
@@ -141,6 +145,7 @@ bool check_token(const char*& it, const std::string& str) {
 bool consume_token(const char*& it, const std::string& str) {
 	if (check_token(it, str)) {
 		it += str.length();
+		skip_whitespace_not_nl(it);
 		return true;
 	}
 	return false;
@@ -166,6 +171,7 @@ float consume_float(const char*& it) {
 	char* end;
 	float n = strtof(it, &end);
 	it = end;
+	skip_whitespace_not_nl(it);
 	return n;
 }
 
@@ -174,6 +180,7 @@ int consume_int(const char*& it) {
 	char* end;
 	int n = strtol(it, &end, 10);
 	it = end;
+	skip_whitespace_not_nl(it);
 	return n;
 }
 
@@ -187,6 +194,7 @@ bool maybe_consume_float(const char*& it, float& f) {
 	}
 	else {
 		it = end;
+		skip_whitespace_not_nl(it);
 		return true;
 	}
 }
@@ -201,6 +209,7 @@ bool maybe_consume_int(const char*& it, int& i) {
 	}
 	else {
 		it = end;
+		skip_whitespace_not_nl(it);
 		return true;
 	}
 }

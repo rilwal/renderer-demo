@@ -176,7 +176,7 @@ public:
 
 	std::map<std::string, Uniform> uniforms;
 private:
-
+	
 
 	uint32_t load_shader_src(GLenum type, const char* it, int& line);
 	
