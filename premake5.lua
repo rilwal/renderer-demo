@@ -39,17 +39,51 @@ project "GLFW"
    }
 
 
+project "spng"
+   kind "SharedLib"
+
+   defines {
+      "SPNG_USE_MINIZ",
+      "SPNG_SSE=4"
+   }
+
+   files {
+      "vendor/spng/spng.c",
+      "vendor/spng/spng.h",
+
+      "vendor/miniz/miniz.c"
+   }
+
+   includedirs {
+      "vendor/miniz",
+   }
+
+
+project "imgui"
+   kind "StaticLib"
+
+   files {
+      "vendor/imgui/*.cpp",
+      "vendor/imgui/backends/imgui_impl_opengl3.cpp",
+      "vendor/imgui/backends/imgui_impl_glfw.cpp",
+      "vendor/imguizmo/ImGuizmo.cpp",
+   }
+
+   includedirs {
+      "vendor/imgui",
+      "vendor/imguizmo",
+      "vendor/glm/glm",
+      "vendor/glfw/include"
+   }
+
+   links {
+      "GLFW"
+   }
+
 project "rendererer-demo"
     kind "ConsoleApp" -- Console app for now, until we have some log / debugging utility.
     language "C++"
     cppdialect "C++latest"
-    openmp "On"
-
-    defines {
-      "SPNG_USE_MINIZ",
-      "SPNG_STATIC",
-      "SPNG_SSE=4" 
-    }
 
     files 
     {
@@ -57,12 +91,6 @@ project "rendererer-demo"
       "src/**.hpp",
       "vendor/flecs/flecs.c",
       "vendor/glad/src/gl.c",
-      "vendor/imgui/*.cpp",
-      "vendor/imgui/backends/imgui_impl_opengl3.cpp",
-      "vendor/imgui/backends/imgui_impl_glfw.cpp",
-      "vendor/spng/spng.c",
-      "vendor/miniz/miniz.c",
-      "vendor/imguizmo/ImGuizmo.cpp"
     }
 
     includedirs 
@@ -77,9 +105,17 @@ project "rendererer-demo"
       "vendor/fastgltf/include",
       "vendor/stb",
       "vendor/spng",
-      "vendor/miniz",
       "vendor/imguizmo"
 
+   }
+
+   links 
+   {
+       "GLFW",
+       "fastgltf",
+       "fastgltf_simdjson",
+       "spng",
+       "imgui"
    }
 
     filter "configurations:Debug"
@@ -93,11 +129,7 @@ project "rendererer-demo"
       {
          "vendor/fastgltf/build/minsizerel"
       }
+
    filter {}
 
-    links 
-    {
-        "GLFW",
-        "fastgltf",
-        "fastgltf_simdjson"
-    }
+
