@@ -28,9 +28,9 @@
 
 
 struct Uniform {
-	Uniform(): type(ShaderDataType::F32) { _data = {}; };
-	Uniform(ShaderDataType dt) : type(dt) { _data = {}; };
-	Uniform(const Uniform& u) : name(u.name), type(u.type), _data(u._data) {};
+	Uniform(): type(ShaderDataType::F32) { };
+	Uniform(ShaderDataType dt) : type(dt) {  };
+	Uniform(const Uniform& u) : name(u.name), type(u.type), _data(u._data), _default(u._default) {};
 
 	std::string name;
 	ShaderDataType type;
@@ -143,9 +143,9 @@ private:
 		glm::mat2 m2;
 		glm::mat3 m3;
 		glm::mat4 m4;
-	} _data, _default;
+	} _data = {}, _default = {};
 
-	Ref<Texture2D> tex;
+	Ref<Texture2D> tex = {};
 };
 
 
@@ -188,13 +188,11 @@ private:
 
 	bool imgui_window_open = true;
 
-	uint32_t gl_id;
+	uint32_t gl_id = 0;
 
-	
-
-	std::map<std::string, std::pair<float, float>> ranges;
-	std::map<std::string, float> steps;
-	std::map<std::string, bool> is_color;
-	std::map<std::string, std::string> texture_paths;
+	std::map<std::string, std::pair<float, float>> ranges = {};
+	std::map<std::string, float> steps = {};
+	std::map<std::string, bool> is_color = {};
+	std::map<std::string, std::string> texture_paths = {};
 
 };

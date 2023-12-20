@@ -33,11 +33,11 @@ struct IntermediateMesh {
 
 
 struct Mesh : IAsset {
-	Mesh();
-	~Mesh();
+	Mesh() noexcept;
+	~Mesh() noexcept;
 
 	Mesh(Mesh&) = delete;
-	Mesh(Mesh&&);
+	Mesh(Mesh&&) noexcept;
 
 	std::vector<glm::vec3> vertices;
 	std::vector<glm::vec3> normals;
@@ -63,9 +63,6 @@ struct Mesh : IAsset {
 
 	void reload() override;
 	void unload() override;
-
-
-	
 
 private:
 

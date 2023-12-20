@@ -10,13 +10,25 @@
 #include "util.hpp"
 
 
-Mesh::Mesh() : IAsset("Mesh") {
+Mesh::Mesh()  noexcept : IAsset("Mesh")  {
 }
 
-Mesh::~Mesh() {
+Mesh::~Mesh() noexcept {
 }
 
-Mesh::Mesh(Mesh&& other) : IAsset("Mesh") {
+Mesh::Mesh(Mesh&& other) noexcept : IAsset("Mesh") {
+	has_normals = other.has_normals;
+	has_tangents = other.has_tangents;
+	has_bitangents = other.has_bitangents;
+	has_uvs = other.has_uvs;
+	
+	vertices = std::move(other.vertices);
+	normals = std::move(other.vertices);
+	tans = std::move(other.tans);
+	bitans = std::move(other.bitans);
+	uvs = std::move(other.uvs);
+
+	indices = std::move(other.indices);
 }
 
 namespace std {
@@ -143,9 +155,9 @@ void cubesphere_subdiv(IntermediateMesh& m) {
 		uint32_t v2i = tri.vert_idx[1];
 		uint32_t v3i = tri.vert_idx[2];
 
-		auto v1 = m.verts[v1i];
-		auto v2 = m.verts[v2i];
-		auto v3 = m.verts[v3i];
+		const auto& v1 = m.verts[v1i];
+		const auto& v2 = m.verts[v2i];
+		const auto& v3 = m.verts[v3i];
 
 		uint32_t m12 = static_cast<uint32_t>(m.verts.size());
 		m.verts.push_back(IntermediateMesh::Vertex{ (v1.position + v2.position) / 2.f, (v1.normal + v2.normal) / 2.f });

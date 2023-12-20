@@ -93,17 +93,6 @@ private:
 
 
 
-// This is a bad thing, make it better!
-// Executes a function on the main thread
-struct MainThreadTask {
-	std::function<void(void*)> callback;
-	void* parameter;
-};
-
-extern std::vector<MainThreadTask> g_tasks;
-
-
-
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
 // Limitations: All meshes must have the same vertex specification!!!

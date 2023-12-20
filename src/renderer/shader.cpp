@@ -591,7 +591,7 @@ void Shader::use() {
 
 #include "imgui_internal.h"
 bool draw_texture_picker(std::string name, Ref<Texture2D>& current) {
-	ImGui::Tag(name.c_str());
+	auto tag = ImGui::Tag(name.c_str());
 
 	ImVec2 combo_pos = ImGui::GetCursorScreenPos();
 	ImGuiStyle& style = ImGui::GetStyle();
@@ -601,7 +601,7 @@ bool draw_texture_picker(std::string name, Ref<Texture2D>& current) {
 		ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, glm::vec2(0.0f, 0.5f));
 		for (auto& texture_wr : asset_lib<Texture2D>) {
 			if (auto texture = texture_wr.lock()) {
-				ImGui::Tag(texture->get_id());
+				auto tag = ImGui::Tag(texture->get_id());
 
 				float aspect_ratio = (float)texture->get_width() / texture->get_height();
 

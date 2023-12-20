@@ -417,11 +417,6 @@ int main() {
             times_buffer_idx++;
 
 
-            for (auto& task : g_tasks) {
-                task.callback(task.parameter);
-            }
-
-
             static float move_speed = glfwGetKey(renderer.get_platform_window(), GLFW_KEY_LEFT_SHIFT) ? 10.0f : 5.0f;
 
             if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_W)) {
@@ -464,7 +459,7 @@ int main() {
 
             ImGui::Begin("Camera Controls");
 
-            ImGui::Text("%f ms (%.02f fps)", (total_time / 16) * 1000, 1.f / (total_time / 16));
+            ImGui::Text("%f ms (%.02f fps)", (total_time / 16.f) * 1000.f, 1.f / (total_time / 16));
 
             ImGui::Text("%llu", bundle.get_rendered_tri_count());
 
