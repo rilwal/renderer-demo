@@ -141,7 +141,7 @@ public:
 		m_light_query = ecs.query_builder<const TransformComponent, const Light>()
 			.build();
 
-		Material def = { glm::vec3(0.8) };
+		Material def = { glm::vec3(0.8f) };
 		register_material(def);
 	}
 
@@ -156,7 +156,7 @@ public:
 
 
 	MeshHandle add_entry(Ref<Mesh> m) {
-		uint32_t index = m_entries.size();
+		uint32_t index = static_cast<uint32_t>(m_entries.size());
 
 		uint32_t index_count = static_cast<uint32_t>(m->indices.size());
 		uint32_t vertex_count = static_cast<uint32_t>(m->vertices.size());
@@ -170,7 +170,7 @@ public:
 		m_index_buffer.extend(m->indices);
 
 		std::vector<float> vertices;
-		for (int i = 0; i < vertex_count; i++) {
+		for (uint32_t i = 0; i < vertex_count; i++) {
 			vertices.push_back(m->vertices[i].x);
 			vertices.push_back(m->vertices[i].y);
 			vertices.push_back(m->vertices[i].z);
@@ -295,14 +295,14 @@ public:
 		m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
 		m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
 		m_main_shader->use();
-		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, command_list.size(), 0);
+		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
 		
 
 		GL_ERROR_CHECK()
 	}
 
 
-	inline uint32_t get_rendered_tri_count() {
+	inline uint64_t get_rendered_tri_count() {
 		return m_rendered_tri_count;
 	}
 

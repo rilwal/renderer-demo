@@ -8,31 +8,40 @@
 #include "imgui.h"
 
 
+FILE* open_file(std::string filename, int retries) {
+	FILE* file;
+
+#ifdef _WIN32
+	errno_t error = fopen_s(&file, filename.c_str(), "rb");
+
+	if (error != 0) {
+		fprintf(stderr, "Failed to open file %s.\n", filename.c_str());
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+		if (retries <= 0)
+			return nullptr;
+
+		return open_file(filename, retries - 1);
+	}
+#else
+	file = fopen(filename.c_str(), "r");
+	if (!file) {
+		fprintf(stderr, "Failed to open file %s.\n", filename.c_str());
+		return contents;
+	}
+#endif
+
+	return file;
+}
+
 
 std::vector<uint8_t> load_file(std::string filename, size_t offset, size_t len, int retries) {
-	 FILE* file;
 	 std::vector<uint8_t> contents;
 
-	#ifdef _WIN32
-	 errno_t error = fopen_s(&file, filename.c_str(), "rb");
-
-	 if (error != 0) {
-		 fprintf(stderr, "Failed to open file %s.\n", filename.c_str());
-
-		 std::this_thread::sleep_for(std::chrono::milliseconds(2));
-		 
-		 if (retries <= 0)
-			return contents;
-
-		 return load_file(filename, offset, len, retries - 1);
-	 }
-	#else
-	 file = fopen(filename.c_str(), "r");
-	 if (!file) {
-		 fprintf(stderr, "Failed to open file %s.\n", filename.c_str());
-		 return contents;
-	 }
-	#endif
+	 FILE* file = open_file(filename, retries);
+	 if (!file) return contents;
+	
 	 fseek(file, 0, SEEK_END);
 	 size_t filesize = ftell(file);
 	 rewind(file);
@@ -41,7 +50,7 @@ std::vector<uint8_t> load_file(std::string filename, size_t offset, size_t len, 
 
 	 contents.resize(len + 1);
 
-	 fseek(file, offset, SEEK_CUR);
+	 fseek(file, static_cast<long>(offset), SEEK_CUR);
 
 	 fread(contents.data(), 1, len, file);
 	 fclose(file);

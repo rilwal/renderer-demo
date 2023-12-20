@@ -139,21 +139,21 @@ void cubesphere_subdiv(IntermediateMesh& m) {
 	std::vector<IntermediateMesh::Triangle> new_tris;
 
 	for (auto& tri : m.tris) {
-		uint16_t v1i = tri.vert_idx[0];
-		uint16_t v2i = tri.vert_idx[1];
-		uint16_t v3i = tri.vert_idx[2];
+		uint32_t v1i = tri.vert_idx[0];
+		uint32_t v2i = tri.vert_idx[1];
+		uint32_t v3i = tri.vert_idx[2];
 
 		auto v1 = m.verts[v1i];
 		auto v2 = m.verts[v2i];
 		auto v3 = m.verts[v3i];
 
-		uint16_t m12 = m.verts.size();
+		uint32_t m12 = static_cast<uint32_t>(m.verts.size());
 		m.verts.push_back(IntermediateMesh::Vertex{ (v1.position + v2.position) / 2.f, (v1.normal + v2.normal) / 2.f });
 
-		uint16_t m23 = m.verts.size();
+		uint32_t m23 = static_cast<uint32_t>(m.verts.size());
 		m.verts.push_back({ (v2.position + v3.position) / 2.f, (v2.normal + v3.normal) / 2.f });
 
-		uint16_t m13 = m.verts.size();
+		uint32_t m13 = static_cast<uint32_t>(m.verts.size());
 		m.verts.push_back({ (v1.position + v3.position) / 2.f, (v1.normal + v3.normal) / 2.f });
 
 
@@ -215,7 +215,7 @@ Ref<Mesh> construct_cube_sphere(float size, int subdivisions) {
 
 void Mesh::load_from_obj_string(const char* src) {
 	// Temporary index vector, tuple goes Vertex, UV, Normal
-	std::vector<std::tuple<int, int, int>> _indices;
+	std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> _indices;
 
 	// Iterate over data, parsing as we go
 	const char* it = src;
@@ -286,17 +286,17 @@ void Mesh::load_from_obj_string(const char* src) {
 			//   t is the index of the texture coordinate
 			//   n is the index of the vertex normal
 			it++;
-			size_t v = 0, t = 0, n = 0;
+			uint32_t v = 0, t = 0, n = 0;
 
 			for (int i = 0; i < 3; i++) {
 				skip_whitespace(it);
-				v = consume_int(it);
+				v = static_cast<uint32_t>(consume_int(it));
 				if (*it == '/') {
 					it++;
-					t = consume_int(it);
+					t = static_cast<uint32_t>(consume_int(it));
 					if (*it == '/') {
 						it++;
-						n = consume_int(it);
+						n = static_cast<uint32_t>(consume_int(it));
 					}
 				}
 

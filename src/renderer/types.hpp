@@ -113,7 +113,7 @@ constexpr GLenum GetGLPrimitiveType(ShaderDataType dt) {
 
 	}
 
-	assert(false, "Unknown Data Type");
+	assert(false && "Unknown Data Type");
 	return -1;
 }
 
@@ -130,6 +130,9 @@ constexpr size_t GetGLPrimitiveSize(GLenum t) {
 		case GL_UNSIGNED_SHORT: return 2;
 		case GL_UNSIGNED_INT: return 4;
 	}
+
+	assert(false && "UNKNOWN GL TYPE");
+	return 0;
 }
 
 
@@ -164,13 +167,13 @@ constexpr int32_t GetGLPrimitiveCount(ShaderDataType dt) {
 	case ShaderDataType::Sampler2D: return 1;
 
 	}
-	assert(false, "Unknown Data Type");
+	assert(false && "Unknown Data Type");
 	return -1;
 }
 
 template<ShaderDataType dt>
 constexpr auto CreateGLType() {
-	assert(false, "Unknown Data Type");
+	assert(false && "Unknown Data Type");
 	return float();
 }
 
@@ -208,7 +211,7 @@ SHADER_TYPE(ShaderDataType::Sampler2D, uint32_t);
 
 template<ShaderDataType dt>
 constexpr auto CreatePrim() {
-	assert(false, "Unknown Data Type");
+	assert(false && "Unknown Data Type");
 	return float();
 }
 

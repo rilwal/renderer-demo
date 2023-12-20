@@ -55,7 +55,7 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
 
             png_src = cwd_relative_path.string();
 
-            spng_set_png_file(ctx, fopen(png_src.c_str(), "rb"));
+            spng_set_png_file(ctx, open_file(png_src));
         }
 
         spng_ihdr ihdr = {};
@@ -100,7 +100,6 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
         std::vector<uint8_t> image_data;
         image_data.resize(image_len);
 
-        #pragma omp parallel 
         spng_decode_image(ctx, image_data.data(), image_data.size(), fmt, 0);
 
         // Let's try the simplest implementation: bindless textures
@@ -123,10 +122,11 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
             uint32_t min_filter = (uint32_t)sampler.minFilter.value_or(GL_LINEAR);
             uint32_t mag_filter = (uint32_t)sampler.magFilter.value_or(GL_LINEAR);
 
-            glSamplerParameterf(sampler_id, GL_TEXTURE_MIN_FILTER, (uint32_t)*sampler.minFilter);
-            glSamplerParameterf(sampler_id, GL_TEXTURE_MAG_FILTER, (uint32_t)*sampler.magFilter);
-            glSamplerParameterf(sampler_id, GL_TEXTURE_WRAP_S, (uint32_t)sampler.wrapS);
-            glSamplerParameterf(sampler_id, GL_TEXTURE_WRAP_T, (uint32_t)sampler.wrapT);
+
+            glSamplerParameteri(sampler_id, GL_TEXTURE_MIN_FILTER, min_filter);
+            glSamplerParameteri(sampler_id, GL_TEXTURE_MAG_FILTER, mag_filter);
+            glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_S, (uint32_t)sampler.wrapS);
+            glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_T, (uint32_t)sampler.wrapT);
 
             float border_color[4] = { 0, 0, 0, 0 };
             glSamplerParameterfv(sampler_id, GL_TEXTURE_BORDER_COLOR, border_color);

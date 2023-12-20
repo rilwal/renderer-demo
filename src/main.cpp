@@ -5,6 +5,9 @@
 #include <filesystem>
 #include <variant>
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "glm.hpp"
 #include "gtc/matrix_transform.hpp"
 #include "gtx/quaternion.hpp"
@@ -13,12 +16,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "flecs.h"
-
-//#include "fastgltf/parser.hpp"
-//#include "fastgltf/types.hpp"
-//#include "fastgltf/glm_element_traits.hpp"
-//#include "fastgltf/tools.hpp"
-//#include "fastgltf/util.hpp"
+#include "imgui.h"
+#include "ImGuizmo.h"
 
 #include "stb_image.h"
 
@@ -37,7 +36,9 @@
 
 
 
-void set_entity_transform (flecs::entity& e, Position translation, Rotation rotation, Scale scale) {
+
+
+void set_entity_transform (flecs::entity& e, Position translation=Position(), Rotation rotation= Rotation(), Scale scale= Scale()) {
     e.set<Position>(translation);
     e.set<Rotation>(rotation);
     e.set<Scale>(scale);
@@ -74,7 +75,7 @@ glm::vec3 random_vec3(float min, float max) {
 flecs::entity spawn_cube(MeshBundle& mb, Model model) {
     auto cube_entity = ecs.entity();
 
-    set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14, 3.14))), Scale(random_float(0.5, 1.5)));
+    set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14f, 3.14f))), Scale(random_float(0.5f, 1.5f)));
     cube_entity.set<Model>(model);
 
     return cube_entity;
@@ -145,7 +146,51 @@ void entity_inspector_iterate(flecs::entity e) {
 }
 
 
-void draw_entity_inspector(MeshBundle& bundle, flecs::entity root) {
+
+void EditTransform(const Camera& camera, glm::mat4& matrix)
+{
+    static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::ROTATE);
+    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
+    if (ImGui::IsKeyPressed(ImGuiKey_Z))
+        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+    if (ImGui::IsKeyPressed(ImGuiKey_X))
+        mCurrentGizmoOperation = ImGuizmo::ROTATE;
+    if (ImGui::IsKeyPressed(ImGuiKey_C)) // r Key
+        mCurrentGizmoOperation = ImGuizmo::SCALE;
+    if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
+        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
+        mCurrentGizmoOperation = ImGuizmo::ROTATE;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
+        mCurrentGizmoOperation = ImGuizmo::SCALE;
+    float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+    ImGuizmo::DecomposeMatrixToComponents(&matrix[0][0], matrixTranslation, matrixRotation, matrixScale);
+    ImGui::InputFloat3("Tr", matrixTranslation);
+    ImGui::InputFloat3("Rt", matrixRotation);
+    ImGui::InputFloat3("Sc", matrixScale);
+    ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, &matrix[0][0]);
+
+    if (mCurrentGizmoOperation != ImGuizmo::SCALE)
+    {
+        if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
+            mCurrentGizmoMode = ImGuizmo::LOCAL;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
+            mCurrentGizmoMode = ImGuizmo::WORLD;
+    }
+    
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+    glm::mat4 view = camera.view();
+    ImGuizmo::Manipulate(&view[0][0], &camera.projection[0][0], mCurrentGizmoOperation, mCurrentGizmoMode, &matrix[0][0], nullptr, nullptr);
+}
+
+
+
+void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camera) {
 
     if (ImGui::Begin("Entity Tree")) {
         entity_inspector_iterate(root);
@@ -156,19 +201,21 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root) {
 
     if (ImGui::Begin("Entity Inspector")) {
         if (selected_entity.is_alive()) {
-            if (ImGui::DragFloat3("Position", (float*)selected_entity.get_mut<Position>(), 0.1)) {
+            EditTransform(camera, selected_entity.get_mut<TransformComponent>()->transform);
+
+            if (ImGui::DragFloat3("Position", (float*)selected_entity.get_mut<Position>(), 0.1f)) {
                 selected_entity.modified<Position>();
             }
 
             if (selected_entity.has<Rotation>()) {
                 glm::quat rotation = *selected_entity.get<Rotation>();
-                if (ImGui::DragFloat4("Rotation", (float*)&rotation, 0.05, -3.14, 3.14)) {
+                if (ImGui::DragFloat4("Rotation", (float*)&rotation, 0.05f, -3.14f, 3.14f)) {
                     selected_entity.set<Rotation>(rotation);
                     selected_entity.modified<Rotation>();
                 }
             }
 
-            if (ImGui::DragFloat3("Scale", (float*)selected_entity.get_mut<Scale>(), 0.1)) {
+            if (ImGui::DragFloat3("Scale", (float*)selected_entity.get_mut<Scale>(), 0.1f)) {
                 selected_entity.modified<Scale>();
             }
 
@@ -285,73 +332,77 @@ int main() {
 
         float total_time = 0;
 
-        // Spawn a classic sphere grid!
+        constexpr bool test_scene = true;
 
-        auto balls = ecs.entity("Balls")
-            .add<Rotation>()
-            .add<Scale>()
-            .set<Position>(glm::vec3{20, 0, 0})
-            .child_of(root_node);
+        if (test_scene) {
+            // Spawn a classic sphere grid!
+            auto balls = ecs.entity("Balls")
+                .add<Rotation>()
+                .add<Scale>()
+                .set<Position>(glm::vec3{ 20, 0, 0 })
+                .child_of(root_node);
 
-        constexpr int grid_size = 6;
-        for (int x = 0; x < grid_size; x++) {
-            for (int y = 0; y < grid_size; y++) {
-                Material m = {};
-                m.diffuse_color = { 1, .05, .05 };
-                m.metallic_roughness = { (float)y / grid_size, (float)x / grid_size};
-                MaterialHandle material = bundle.register_material(m);
-                Model model(sphere_mesh, material);
+            constexpr int grid_size = 6;
+            for (int x = 0; x < grid_size; x++) {
+                for (int y = 0; y < grid_size; y++) {
+                    Material m = {};
+                    m.diffuse_color = { 1, .05, .05 };
+                    m.metallic_roughness = { (float)y / grid_size, (float)x / grid_size };
+                    MaterialHandle material = bundle.register_material(m);
+                    Model model(sphere_mesh, material);
 
-                ecs.entity(std::format("Ball {}, {}", x, y).c_str())
-                    .child_of(balls)
-                    .add<Rotation>()
-                    .set<Scale>(0.8)
-                    .set<Position>(glm::vec3{ x * 2, y * 2, 0 })
-                    .set<Model>(model);
+                    ecs.entity(std::format("Ball {}, {}", x, y).c_str())
+                        .child_of(balls)
+                        .add<Rotation>()
+                        .set<Scale>(0.8f)
+                        .set<Position>(glm::vec3{ x * 2, y * 2, 0 })
+                        .set<Model>(model);
+                }
             }
-        }
 
 
-        for (int i = 0; i < 1; i++) {
-            spawn_cube(bundle, cube_mesh);
-            spawn_cube(bundle, sphere_mesh);
-            spawn_cube(bundle, joker_mesh);
-        }
 
-        for (int i = 0; i < 100; i++) {
-            MaterialHandle material = bundle.register_material({ random_vec3(0, 1), glm::vec2(random_float(.1, .9), random_float(.1, .9)) });
+            auto cubes = ecs.entity("Cubes")
+                .child_of(root_node);
 
-            auto cube_entity = ecs.entity();
-            set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14, 3.14))), Scale(random_float(0.5, 1.5)));
-            Model m(cube_mesh, material);
-            cube_entity.set<Model>(m);
-        }
+            set_entity_transform(cubes);
 
-        auto lights = ecs.entity("Lights")
-            .add<Rotation>()
-            .add<Scale>()
-            .set<Position>({})
-            .child_of(root_node);
+            for (int i = 0; i < 100; i++) {
+                MaterialHandle material = bundle.register_material({ random_vec3(0, 1), glm::vec2(random_float(.1f, .9f), random_float(.1f, .9f)) });
+                Model m(cube_mesh, material);
 
+                auto cube_entity = ecs.entity(std::format("Cube {}", i).c_str())
+                    .child_of(cubes)
+                    .set<Model>(m);
 
-        auto e = ecs.entity(std::format("Master Light").c_str())
-            .child_of(lights)
-            .add<Scale>()
-            .add<Rotation>()
-            .set<Position>(glm::vec3{ 0.f, 0.f, 0.f })
-            .set<Light>({ glm::vec3(1, 1, 1) , 100 });
+                set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14f, 3.14f))), Scale(random_float(0.5f, 1.5f)));
+            }
+
+            auto lights = ecs.entity("Lights")
+                .add<Rotation>()
+                .add<Scale>()
+                .set<Position>({})
+                .child_of(root_node);
 
 
-        for (int i = 0; i < 40; i++) {
-            auto e = ecs.entity(std::format("Light {}", i).c_str())
+            auto e = ecs.entity(std::format("Master Light").c_str())
                 .child_of(lights)
                 .add<Scale>()
                 .add<Rotation>()
-                .set<Position>(random_vec3(-10, 10))
-                .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
+                .set<Position>(glm::vec3{ 0.f, 0.f, 0.f })
+                .set<Light>({ glm::vec3(1, 1, 1) , 100 });
+
+
+            for (int i = 0; i < 40; i++) {
+                auto e = ecs.entity(std::format("Light {}", i).c_str())
+                    .child_of(lights)
+                    .add<Scale>()
+                    .add<Rotation>()
+                    .set<Position>(random_vec3(-10, 10))
+                    .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
+            }
+
         }
-
-
 
 
 
@@ -371,7 +422,7 @@ int main() {
             }
 
 
-            static float move_speed = glfwGetKey(renderer.get_platform_window(), GLFW_KEY_LEFT_SHIFT) ? 10.0 : 5.0f;
+            static float move_speed = glfwGetKey(renderer.get_platform_window(), GLFW_KEY_LEFT_SHIFT) ? 10.0f : 5.0f;
 
             if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_W)) {
                 c.position += c.get_heading() * delta_time * move_speed;
@@ -408,7 +459,7 @@ int main() {
 
             renderer.begin_frame();
 
-            draw_entity_inspector(bundle, root_node);
+            draw_entity_inspector(bundle, root_node, c);
 
 
             ImGui::Begin("Camera Controls");

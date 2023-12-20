@@ -13,7 +13,7 @@
 
 
 
-struct MeshBundle;
+class MeshBundle;
 
 class GLTF {
 public:

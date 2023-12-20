@@ -65,7 +65,7 @@ public:
 		
 	void bind(int binding_index=0);
 
-	void set_layout(VertexBufferLayout layout, int binding_index=0, int base_attrib=0);
+	void set_layout(VertexBufferLayout layout, uint32_t binding_index=0, uint32_t base_attrib=0);
 
 	void resize(size_t size);
 

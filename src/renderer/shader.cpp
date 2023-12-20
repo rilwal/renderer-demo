@@ -12,21 +12,6 @@
 #include "../util.hpp"
 #include "texture.hpp"
 
-// Utility function to compile a GL shader from std::string
-// TODO (High): Error handling here!
-static uint32_t compile_gl_shader(GLenum type, const std::string src) {
-	uint32_t shader = glCreateShader(type);
-	const char* src_c = src.data();
-	int32_t length = src.length();
-	glShaderSource(shader, 1, &src_c, &length);
-	GL_ERROR_CHECK();
-
-	glCompileShader(shader);
-	GL_ERROR_CHECK();
-
-	return shader;
-}
-
 
 Shader::Shader() : IAsset("Shader") {
 
@@ -87,7 +72,7 @@ bool consume_directive(const char*& it, std::string name, std::vector<const char
 
 	skip_to_newline(it2);
 
-	lengths.push_back(it - sources[sources.size() - 1]);
+	lengths.push_back(static_cast<int32_t>(it - sources[sources.size() - 1]));
 	sources.push_back(it2);
 
 	it = it2;
@@ -112,7 +97,7 @@ auto consume_directive(const char*& it, std::string name, std::vector<const char
 	if (!consume_token(it2, ")")) return fail_return;
 	skip_to_newline(it2);
 
-	lengths.push_back(it - sources[sources.size() - 1]);
+	lengths.push_back(static_cast<int32_t>(it - sources[sources.size() - 1]));
 	sources.push_back(it2);
 
 	it = it2;
@@ -441,11 +426,11 @@ void Shader::introspect() {
 	glGetProgramInterfaceiv(gl_id, GL_UNIFORM, GL_ACTIVE_RESOURCES, &num_active_uniforms);
 	
 
-	for (int i = 0; i < num_active_uniforms; i++) {
+	for (uint32_t i = 0; i < static_cast<uint32_t>(num_active_uniforms); i++) {
 		auto properties = std::to_array<uint32_t>({ GL_BLOCK_INDEX, GL_TYPE, GL_NAME_LENGTH, GL_LOCATION });
 		std::array<int32_t, properties.size()> results = {};
 
-		glGetProgramResourceiv(gl_id, GL_UNIFORM, i, properties.size(), properties.data(), properties.size(), nullptr, results.data());
+		glGetProgramResourceiv(gl_id, GL_UNIFORM, i, static_cast<int32_t>(properties.size()), properties.data(), static_cast<int32_t>(properties.size()), nullptr, results.data());
 
 		auto& [block_index, uniform_type, name_length, location] = results;
 
@@ -651,7 +636,7 @@ bool draw_texture_picker(std::string name, Ref<Texture2D>& current) {
 					if (aspect_ratio < 1) preview_size.x *= aspect_ratio;
 					else preview_size.y /= aspect_ratio;
 
-					ImGui::Image((ImTextureID)texture->get_id(), preview_size);
+					ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture->get_id())), preview_size);
 
 					ImGui::End();
 
@@ -665,7 +650,7 @@ bool draw_texture_picker(std::string name, Ref<Texture2D>& current) {
 				else preview_size.y /= aspect_ratio;
 
 
-				ImGui::Image((ImTextureID)texture->get_id(), preview_size);
+				ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture->get_id())), preview_size);
 				ImGui::SameLine();
 				ImGui::Text(texture->path.c_str());
 
@@ -686,7 +671,7 @@ bool draw_texture_picker(std::string name, Ref<Texture2D>& current) {
 		if (aspect_ratio < 1) preview_size.x *= aspect_ratio;
 		else preview_size.y /= aspect_ratio;
 
-		ImGui::Image((ImTextureID)current->get_id(), preview_size);
+		ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(current->get_id())), preview_size);
 
 		ImGui::SameLine();
 		ImGui::Text(current->path.c_str());
@@ -733,7 +718,7 @@ void Shader::show_imgui() {
 					RenderControl(Vec2, DragFloat2, step, min, max);
 					RenderControl(Vec3, DragFloat3, step, min, max);
 					RenderControl(Vec4, DragFloat4, step, min, max);
-					RenderControl(I32, DragInt, (int)step);
+					RenderControl(I32, DragInt, step);
 					RenderControl(Color, ColorEdit3);
 #undef RenderControl
 

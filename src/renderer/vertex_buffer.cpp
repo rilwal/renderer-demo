@@ -36,7 +36,7 @@ void VertexBuffer::bind(int binding_index) {
 }
 
 
-void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int base_attrib) {
+void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t binding_index, uint32_t base_attrib) {
 
 	_layout = layout;
 
@@ -48,8 +48,8 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int 
 		}
 
 		// Then loop over and set everything up
-		size_t index = base_attrib;
-		int32_t offset = 0;
+		uint32_t index = base_attrib;
+		uint32_t offset = 0;
 
 		for (auto& attribute : layout) {
 
@@ -72,7 +72,7 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, int binding_index, int 
 					glVertexArrayAttribFormat(m_vao_id, index + i, 4, GetGLPrimitiveType(dt), false, offset + (4 * sizeof(float)) * i);
 					GL_ERROR_CHECK();
 
-					glVertexArrayAttribBinding(m_vao_id, index + i, binding_index); // TODO: ASSUMPTION THAT IFF MAT4 Å® DIVISOR = 1 is bad
+					glVertexArrayAttribBinding(m_vao_id, index + i, static_cast<uint32_t>(binding_index)); // TODO: ASSUMPTION THAT IFF MAT4 Å® DIVISOR = 1 is bad
 					GL_ERROR_CHECK();
 				}
 

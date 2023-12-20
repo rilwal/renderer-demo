@@ -8,10 +8,6 @@
 #include <stb_image.h>
 #undef STB_IMAGE_IMPLEMENTATION
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
-#undef STB_IMAGE_WRITE_IMPLEMENTATION
-
 #include "util.hpp"
 
 Texture::Texture() {
@@ -42,8 +38,14 @@ void Texture2D::load_from_file(const char* filename) {
 	// TODO: Properly support different image formats
 	std::vector<uint8_t> data = load_file(filename);
 	m_channels = 4;
-	m_color_data = (uint32_t*)stbi_load_from_memory(data.data(), static_cast<int32_t>(data.size()), &m_width, &m_height, 0, 4);
 
+	int width = 0;
+	int height = 0;
+
+	m_color_data = (uint32_t*)stbi_load_from_memory(data.data(), static_cast<int32_t>(data.size()), &width, &height, 0, 4);
+	
+	m_width = static_cast<uint32_t>(width);
+	m_height = static_cast<uint32_t>(height);
 	//create_empty(m_width, m_height, m_channels, GL_RGB);
 	
 	allocate();
@@ -95,15 +97,6 @@ uint32_t Texture2D::get_pixel(uint32_t x, uint32_t y) {
 void Texture2D::write_color(uint32_t x, uint32_t y, uint32_t color) {
 	m_color_data[x + y * m_width] = color;
 	upload_data();
-}
-
-void Texture2D::save_to_disk() {
-	bool backup = _hot_reload;
-	_hot_reload = false;
-	stbi_write_png(path.c_str(), m_width, m_height, m_channels, (const uint8_t*)m_color_data, 0);
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	_hot_reload = backup;
 }
 
 
@@ -181,7 +174,7 @@ void show_texture_inspector() {
 					}
 
 					ImGui::TableSetColumnIndex(0);
-					ImGui::Image((ImTextureID)texture->get_id(), preview_size, glm::vec2(0, 0), glm::vec2(1, 1));
+					ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture->get_id())), preview_size, glm::vec2(0, 0), glm::vec2(1, 1));
 
 					if (ImGui::IsItemHovered()) {
 						// Show a popup!
@@ -195,7 +188,7 @@ void show_texture_inspector() {
 								preview_size.y /= aspect_ratio;
 							}
 
-							ImGui::Image((ImTextureID)texture->get_id(), preview_size, glm::vec2(0, 0), glm::vec2(1, 1));
+							ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture->get_id())), preview_size, glm::vec2(0, 0), glm::vec2(1, 1));
 
 							ImGui::EndTooltip();
 						}

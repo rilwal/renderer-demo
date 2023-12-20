@@ -28,7 +28,8 @@ project "GLFW"
 
    defines
    {
-      "_GLFW_WIN32"
+      "_GLFW_WIN32",
+      "_CRT_SECURE_NO_WARNINGS"
    }
 
    files
@@ -43,9 +44,11 @@ project "rendererer-demo"
     language "C++"
     cppdialect "C++latest"
     openmp "On"
-    
+
     defines {
-      "SPNG_USE_MINIZ"
+      "SPNG_USE_MINIZ",
+      "SPNG_STATIC",
+      "SPNG_SSE=4" 
     }
 
     files 
@@ -58,7 +61,8 @@ project "rendererer-demo"
       "vendor/imgui/backends/imgui_impl_opengl3.cpp",
       "vendor/imgui/backends/imgui_impl_glfw.cpp",
       "vendor/spng/spng.c",
-      "vendor/miniz/miniz.c"
+      "vendor/miniz/miniz.c",
+      "vendor/imguizmo/ImGuizmo.cpp"
     }
 
     includedirs 
@@ -73,7 +77,8 @@ project "rendererer-demo"
       "vendor/fastgltf/include",
       "vendor/stb",
       "vendor/spng",
-      "vendor/miniz"
+      "vendor/miniz",
+      "vendor/imguizmo"
 
    }
 

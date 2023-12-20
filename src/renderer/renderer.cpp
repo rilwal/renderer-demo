@@ -4,9 +4,10 @@
 #include "glad/gl.h"
 #include "GLFW/glfw3.h"
 
-#include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
+#include "ImGuizmo.h"
 
 #include "util.hpp"
 
@@ -71,13 +72,15 @@ void Renderer::begin_frame() {
 
 	glfwGetFramebufferSize(window, &display_w, &display_h);
 	//glViewport(0, 0, display_w, display_h);
-	glClearColor(.5, .6, .8, 1);
+	glClearColor(.5f, .6f, .8f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GL_ERROR_CHECK();
 
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
+	ImGuizmo::BeginFrame();
+
 	//ImGui::ShowDemoWindow();
 	GL_ERROR_CHECK();
 

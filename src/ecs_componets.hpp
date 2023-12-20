@@ -22,11 +22,11 @@ struct TransformComponent {
     }
 
     auto& operator[](size_t idx) {
-        return transform[idx];
+        return transform[static_cast<glm::length_t>(idx)];
     }
 
     const auto& operator[](size_t idx) const {
-        return transform[idx];
+        return transform[static_cast<glm::length_t>(idx)];
     }
 
     operator glm::mat4() const {

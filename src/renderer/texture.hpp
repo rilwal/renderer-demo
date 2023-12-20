@@ -43,8 +43,8 @@ public:
 
 
 	// Image data related stuff
-	inline int get_width() { return m_width; }
-	inline int get_height() { return m_height; }
+	inline uint32_t get_width() { return m_width; }
+	inline uint32_t get_height() { return m_height; }
 	inline glm::ivec2 get_size() { return { m_width, m_height }; }
 	
 	// OpenGL Texture related stuff
@@ -56,7 +56,6 @@ public:
 	uint32_t get_pixel(uint32_t x, uint32_t y);
 
 	void write_color(uint32_t x, uint32_t y, uint32_t color);
-	void save_to_disk();
 
 
 private:
@@ -66,9 +65,9 @@ private:
 
 	bool m_should_reload = false;
 
-	int m_width;
-	int m_height;
-	int m_channels;
+	uint32_t m_width;
+	uint32_t m_height;
+	uint32_t m_channels;
 };
 
 class Framebuffer {

@@ -154,7 +154,7 @@ public:
 	}
 
 	template <typename T>
-	uint32_t extend(std::vector<T> data) {
+	size_t extend(std::vector<T> data) {
 		return extend(data.data(), data.size() * sizeof(T));
 	}
 

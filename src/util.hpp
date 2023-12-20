@@ -35,6 +35,10 @@ WeakRef<T> make_weak_ref(Ref<T>& a) {
 template<typename T>
 using Opt = std::optional<T>;
 
+
+FILE* open_file(std::string filename, int retries = 5);
+
+
 // Utility function to load a whole file
 std::vector<uint8_t> load_file(std::string filename, size_t offset = 0, size_t len = -1, int retries = 5);
 
