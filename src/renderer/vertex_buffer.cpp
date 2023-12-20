@@ -6,7 +6,7 @@
 
 #include "util.hpp"
 
-VertexBuffer::VertexBuffer(uint32_t vao_id) : Buffer(BufferUsage::STATIC)
+VertexBuffer::VertexBuffer(uint32_t vao_id, uint32_t binding_idx) : Buffer(BufferUsage::STATIC)
 {
 	printf("Vertex Buffer Constructor\n");
 	if (vao_id == -1) {
@@ -15,6 +15,7 @@ VertexBuffer::VertexBuffer(uint32_t vao_id) : Buffer(BufferUsage::STATIC)
 	}
 
 	m_vao_id = vao_id;
+	m_binding_index = binding_idx;
 
 	glBindVertexArray(m_vao_id);
 	GL_ERROR_CHECK();
@@ -36,7 +37,7 @@ void VertexBuffer::bind(int binding_index) {
 }
 
 
-void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t binding_index, uint32_t base_attrib) {
+void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t base_attrib) {
 
 	_layout = layout;
 
@@ -56,24 +57,17 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t binding_index,
 			const ShaderDataType& dt = attribute.data_type;
 
 			if (dt == ShaderDataType::Mat4) {
-				glVertexArrayBindingDivisor(m_vao_id, binding_index, 1);
-				GL_ERROR_CHECK();
 
 				// for Mat4 we need to do something special!
 				for (int i = 0; i < 4; i++) {
 
 					std::cout << std::format("glVertexArrayAttribFormat(id={}, index={}, GetSize(dt)={}, GetGLType(dt)={}, false, offset={});\n",
-						m_vao_id, index+i, 4, GetGLPrimitiveType(dt), offset + (4 * sizeof(float)) * i);
+						m_vao_id, index + i, 4, GetGLPrimitiveType(dt), offset + (4 * sizeof(float)) * i);
 
 
 					glEnableVertexArrayAttrib(m_vao_id, index + i);
-					GL_ERROR_CHECK();
-
 					glVertexArrayAttribFormat(m_vao_id, index + i, 4, GetGLPrimitiveType(dt), false, offset + (4 * sizeof(float)) * i);
-					GL_ERROR_CHECK();
-
-					glVertexArrayAttribBinding(m_vao_id, index + i, static_cast<uint32_t>(binding_index)); // TODO: ASSUMPTION THAT IFF MAT4 Å® DIVISOR = 1 is bad
-					GL_ERROR_CHECK();
+					glVertexArrayAttribBinding(m_vao_id, index + i, m_binding_index); // TODO: ASSUMPTION THAT IFF MAT4 Å® DIVISOR = 1 is bad
 				}
 
 				index += 4;
@@ -85,20 +79,15 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t binding_index,
 					m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), offset);
 
 				glEnableVertexArrayAttrib(m_vao_id, index);
-				GL_ERROR_CHECK();
-
-				if (dt == ShaderDataType::U32) {
+				if (dt == ShaderDataType::U32 || dt == ShaderDataType::I32) {
 					glVertexArrayAttribIFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), offset);
-
 				}
 				else {
 					glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), false, offset);
 
 				}
-				GL_ERROR_CHECK();
-
-				glVertexArrayAttribBinding(m_vao_id, index, binding_index);
-				GL_ERROR_CHECK();
+				
+				glVertexArrayAttribBinding(m_vao_id, index, m_binding_index);
 
 				attribute.offset = offset;
 

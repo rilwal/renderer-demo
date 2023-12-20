@@ -116,11 +116,9 @@ public:
 
 
 	MeshBundle()
-		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array),
+		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1),
 		m_command_buffer(), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")) {
-		// For now we are hardcoding position,normal.
-		// And MVP, Model (testing just Model!)
-		// TODO: Fix that!!!
+
 
 		m_vertex_buffer.set_layout({
 			{"position", ShaderDataType::Vec3 },
@@ -129,7 +127,8 @@ public:
 			{"tangent", ShaderDataType::Vec3}
 		});
 
-		m_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 1, 4);
+		m_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 4);
+		m_per_idx_buffer.set_per_instance(true);
 
 		m_draw_query = ecs.query_builder<const TransformComponent, const Model>()
 			.build();

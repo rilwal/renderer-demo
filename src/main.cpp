@@ -395,6 +395,16 @@ int main() {
                     .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
             }
 
+
+            MaterialHandle m = bundle.register_material({ .diffuse_color = glm::vec3(1), .metallic_roughness = {1, .1} });
+            Model big_cube_model(cube_mesh, m);
+            auto big_box = ecs.entity("Big Box")
+                .child_of(root_node)
+                .set<Scale>(glm::vec3{ 100, 100, 1 })
+                .add<Rotation>()
+                .set<Position>(glm::vec3{ -50, 50, 20 })
+                .set<Model>(big_cube_model);
+
         }
 
 
