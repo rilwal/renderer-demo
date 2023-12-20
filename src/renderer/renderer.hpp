@@ -92,6 +92,13 @@ private:
 };
 
 
+// This is a tag structure to specify that a mesh is GPU Resident.
+// We will use it for materials, lights and models
+struct GPUResident {
+	size_t addr; // This is probably an offset into a buffer, but usage depends on the object
+	bool is_dirty; // This should be set if any data has been modified that requires a re-upload
+};
+
 
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
@@ -129,6 +136,14 @@ public:
 
 		m_light_query = ecs.query_builder<const TransformComponent, const Light>()
 			.build();
+
+		
+		// Any changes to GPU resident lights should cause the dirty bit to be set
+		ecs.observer<const TransformComponent, const Light, GPUResident>().event(flecs::OnSet | flecs::OnAdd).each(
+			[](flecs::entity e, const TransformComponent t, const Light l, GPUResident& gpu_resident){
+			gpu_resident.is_dirty = true;
+		});
+
 
 		Material def = { glm::vec3(0.8f) };
 		register_material(def);
@@ -231,10 +246,24 @@ public:
 		
 		m_light_buffer.soft_clear();
 
+		ecs.defer_begin();
 		m_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light) {
-			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
-			m_light_buffer.push_back(light.STD140(world_pos));
+			if (e.has<GPUResident>()) {
+				GPUResident& resident = *e.get_mut<GPUResident>();
+
+				if (resident.is_dirty) {
+					glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+					m_light_buffer.set_subdata(light.STD140(world_pos), resident.addr);
+				}
+			}
+			else {
+				glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+				size_t addr = m_light_buffer.push_back(light.STD140(world_pos));
+				e.set<GPUResident>({ addr, false });
+
+			}
 		});
+		ecs.defer_end();
 
 
 		static bool show_shader_config = true;
@@ -325,12 +354,16 @@ private:
 
 	Buffer m_command_buffer;
 	Buffer material_buffer;
+	Buffer m_light_buffer;
 
 	IndexBuffer m_index_buffer;
-	IndexBuffer m_light_buffer;
 
 	flecs::query<const TransformComponent, const Model> m_draw_query;
 	flecs::query<const TransformComponent, const Light> m_light_query;
+
+	flecs::query<const TransformComponent, const Light, const GPUResident> m_resident_light_query;
+	flecs::query<const TransformComponent, const Light, const GPUResident> m_non_resident_light_query;
+
 
 	Ref<Shader> m_main_shader;
 };

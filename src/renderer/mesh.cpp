@@ -155,9 +155,9 @@ void cubesphere_subdiv(IntermediateMesh& m) {
 		uint32_t v2i = tri.vert_idx[1];
 		uint32_t v3i = tri.vert_idx[2];
 
-		const auto& v1 = m.verts[v1i];
-		const auto& v2 = m.verts[v2i];
-		const auto& v3 = m.verts[v3i];
+		const auto v1 = m.verts[v1i];
+		const auto v2 = m.verts[v2i];
+		const auto v3 = m.verts[v3i];
 
 		uint32_t m12 = static_cast<uint32_t>(m.verts.size());
 		m.verts.push_back(IntermediateMesh::Vertex{ (v1.position + v2.position) / 2.f, (v1.normal + v2.normal) / 2.f });

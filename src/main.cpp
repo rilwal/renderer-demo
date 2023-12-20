@@ -282,18 +282,11 @@ int main() {
 
         bool running = true;
 
-        int max_fragment_blocks, max_uniform_block_size;
-
-        glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_BLOCKS, &max_fragment_blocks);
-        glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &max_uniform_block_size);
-
-        printf("Max Fragment blocks: %d\nMax Block Size: %d\n\n", max_fragment_blocks, max_uniform_block_size);
 
         auto cube_1 = construct_cube_mesh(1.0);
         auto sphere = construct_cube_sphere(1.0, 4);
         auto joker = asset_manager.GetByPath<Mesh>("assets/models/joker.obj");
 
-        GL_ERROR_CHECK();
 
         MeshBundle bundle;
 

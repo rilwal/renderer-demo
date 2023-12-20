@@ -90,7 +90,7 @@ public:
 		m_reserved_size = size;
 	}
 
-	void set_data(void* data, size_t size) {
+	void set_data(const void* data, size_t size) {
 		if (size > m_reserved_size) {
 			uint32_t new_size = m_reserved_size || 1;
 
@@ -107,7 +107,7 @@ public:
 		m_size = size;
 	}
 
-	void set_subdata(void* data, size_t offset, size_t size) {
+	void set_subdata(const void* data, size_t offset, size_t size) {
 		size_t min_size = offset + size;
 
 		if (min_size > m_reserved_size) {
@@ -133,7 +133,7 @@ public:
 	}
 
 	// Append some data to a buffer!
-	size_t extend(void* data, size_t len) {
+	size_t extend(const void* data, size_t len) {
 		size_t offset = m_size;
 		set_subdata(data, offset, len);
 		return offset;
@@ -142,20 +142,25 @@ public:
 	// Push an element to the back of a buffer,
 	//	and return it's index
 	template <typename T>
-	size_t push_back(T element) {
+	size_t push_back(const T& element) {
 		size_t offset = m_size;
 		set_subdata(&element, offset, sizeof(T));
 		return offset;
 	}
 
 	template <typename T>
-	void set_data(std::vector<T> data) {
+	void set_data(const std::vector<T> data) {
 		return set_data(data.data(), data.size() * sizeof(T));
 	}
 
 	template <typename T>
-	size_t extend(std::vector<T> data) {
+	size_t extend(const std::vector<T> data) {
 		return extend(data.data(), data.size() * sizeof(T));
+	}
+
+	template<typename T> 
+	void set_subdata(const T& val, size_t offset) {
+		set_subdata(&val, offset, sizeof(T));
 	}
 
 	uint32_t get_id() { return m_gl_id; }
