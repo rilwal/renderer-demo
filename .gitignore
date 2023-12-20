@@ -4,6 +4,8 @@
 *.vcxproj
 *.vcxproj.filters
 
+imgui.ini
+
 #ignore models and stuff because they are big! (and possibly not owned by me!)
 assets/models/*
 
