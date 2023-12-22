@@ -183,27 +183,6 @@ uint32_t Shader::load_shader_src(GLenum type, const char* it, int& line) {
 				skip_whitespace(it);
 			}
 		}
-		else if (consume_token(it, "uniform sampler2D")) {
-			// Let's allow the syntax 
-			// uniform sampler2D name = "file_path";
-			skip_whitespace(it);
-			std::string uniform_name = consume_next_token(it);
-			skip_whitespace(it);
-			if (check_token(it, "=")) {
-				// Break in the file here until the closing "
-				lengths.push_back(static_cast<int32_t>(it - sources[sources.size() - 1]));
-				consume_token(it, "=");
-				skip_whitespace(it);
-				std::string filename = consume_string(it);
-				std::cerr << "F: " << filename << "\n";
-				sources.push_back(it);
-				skip_to_newline(it);
-				skip_whitespace(it);
-
-				texture_paths[uniform_name] = filename;
-			}
-
-		}
 		else {
 			skip_to_newline(it);
 			skip_whitespace(it);
@@ -454,15 +433,8 @@ void Shader::introspect() {
 		Uniform u(t);
 
 		u.location = location;
-
 		u.name = uniform_name;
 
-		if (t == ShaderDataType::Sampler2D) {
-			if (texture_paths.contains(uniform_name)) {
-				Ref<Texture2D> tex = asset_manager.GetByPath<Texture2D>(texture_paths[uniform_name]);
-				u.set(tex);
-			}
-		}
 
 		if (u.location != -1) {
 			switch (t) {
@@ -535,8 +507,6 @@ void Shader::use() {
 
 	// This should probably not be done this way, but it's how we're doing it for now 😂
 	for (auto& [name, uniform] : uniforms) {
-		auto tex = uniform.get<Ref<Texture2D>>();
-
 		switch (uniform.type) {
 			// Let's do another macro thing here to save a lot of chars
 #define UNIFORM_TYPE(shader_type, gl_func) case ShaderDataType::shader_type: gl_func(uniform.location, 1, (GetCPrimitiveType(ShaderDataType::shader_type)*)&uniform.get<GetCType(ShaderDataType::shader_type)>()); break;
@@ -558,18 +528,10 @@ void Shader::use() {
 
 			UNIFORM_TYPE(I32, glUniform1iv);
 			UNIFORM_TYPE(U32, glUniform1uiv);
-			//UNIFORM_TYPE(Sampler2D, glUniform1uiv);
 
 			UNIFORM_TYPE(Bool, glUniform1iv);
 #undef UNIFORM_TYPE
 #undef MAT_UNIFORM_TYPE
-
-		case ShaderDataType::Sampler2D:
-			glActiveTexture(GL_TEXTURE0 + samplers_active);
-			glBindTexture(GL_TEXTURE_2D, tex->get_id());
-			glUniform1i(uniform.location, samplers_active);
-			samplers_active++;
-			break;
 
 		default:
 			assert("UNKNOWN DATA TYPE");
@@ -588,99 +550,6 @@ void Shader::use() {
 
 }
 
-
-#include "imgui_internal.h"
-bool draw_texture_picker(std::string name, Ref<Texture2D>& current) {
-	auto tag = ImGui::Tag(name.c_str());
-
-	ImVec2 combo_pos = ImGui::GetCursorScreenPos();
-	ImGuiStyle& style = ImGui::GetStyle();
-
-
-	if (ImGui::BeginCombo(name.c_str(), "##name")) {
-		ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, glm::vec2(0.0f, 0.5f));
-		for (auto& texture_wr : asset_lib<Texture2D>) {
-			if (auto texture = texture_wr.lock()) {
-				auto tag = ImGui::Tag(texture->get_id());
-
-				float aspect_ratio = (float)texture->get_width() / texture->get_height();
-
-				bool is_selected = texture->get_id() == current->get_id();
-
-				ImVec2 item_pos = ImGui::GetCursorScreenPos();
-
-				char selectable_tag[24];
-				ImFormatString(selectable_tag, IM_ARRAYSIZE(selectable_tag), "##Texture_%02d", texture->get_id());
-
-				if (ImGui::Selectable(selectable_tag, texture->get_id() == current->get_id(), ImGuiSelectableFlags_SpanAvailWidth, glm::vec2(0, 32))) {
-					current = texture;
-				}
-
-				if (ImGui::IsItemHovered()) {
-					// Custom tooltop
-
-					float preview_width = 256.f;
-
-					ImGuiContext& g = *GImGui;
-
-					char window_name[16];
-					ImFormatString(window_name, IM_ARRAYSIZE(window_name), "##Tooltip_%02d", g.TooltipOverrideCount);
-
-					glm::vec2 tooltip_pos = (glm::vec2)item_pos - glm::vec2(preview_width + style.FramePadding.x * 2, 0);
-					ImGui::SetNextWindowPos(tooltip_pos);
-
-					ImGuiWindowFlags flags = ImGuiWindowFlags_Tooltip | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
-					ImGui::Begin(window_name, NULL, flags);
-
-					glm::vec2 preview_size = glm::vec2(preview_width);
-					if (aspect_ratio < 1) preview_size.x *= aspect_ratio;
-					else preview_size.y /= aspect_ratio;
-
-					ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture->get_id())), preview_size);
-
-					ImGui::End();
-
-				}
-
-				ImGui::SameLine();
-
-
-				glm::vec2 preview_size = glm::vec2(32);
-				if (aspect_ratio < 1) preview_size.x *= aspect_ratio;
-				else preview_size.y /= aspect_ratio;
-
-
-				ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(texture->get_id())), preview_size);
-				ImGui::SameLine();
-				ImGui::Text(texture->path.c_str());
-
-			}
-		}
-
-		ImGui::PopStyleVar();
-		ImGui::EndCombo();
-	}
-
-	ImVec2 backup_pos = ImGui::GetCursorScreenPos();
-	if (current) {
-		ImGui::SetCursorScreenPos(ImVec2(combo_pos.x + style.FramePadding.x, combo_pos.y));
-
-		float aspect_ratio = (float)current->get_width() / current->get_height();
-
-		glm::vec2 preview_size = glm::vec2(32);
-		if (aspect_ratio < 1) preview_size.x *= aspect_ratio;
-		else preview_size.y /= aspect_ratio;
-
-		ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(current->get_id())), preview_size);
-
-		ImGui::SameLine();
-		ImGui::Text(current->path.c_str());
-		ImGui::SetCursorScreenPos(backup_pos);
-	}
-
-
-	return false;
-}
 
 
 void Shader::show_imgui() {
@@ -727,12 +596,6 @@ void Shader::show_imgui() {
 						uniform.changed = true; 
 					}
 					break;
-
-				case ShaderDataType::Sampler2D:
-					draw_texture_picker(name, uniform.get<Ref<Texture2D>>());
-					break;
-					//case ShaderDataType::Vec3: if(ImGui::DragFloat3(name.c_str(), (float*)&uniform.get<glm::vec3>(), 0.1f)) uniform.changed = true; break;
-
 
 				default: continue;
 				}

@@ -347,6 +347,7 @@ private:
 
 	std::vector<Entry> m_entries = {};
 	std::vector<Material> m_materials = {};
+	
 
 	VertexArray m_vertex_array;
 

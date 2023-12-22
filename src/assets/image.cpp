@@ -16,6 +16,8 @@ std::unique_ptr<Image> load_image(std::vector<uint8_t> buffer, std::string id) {
 		std::cerr << std::format("Unknown image format for image {}", id);
 		assert(false);
 	}
+
+	return std::make_unique<Image>();
 }
 
 

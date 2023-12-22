@@ -7,6 +7,7 @@
 // TODO: * Expand this to all the formats we can reasonably support
 //		 * Decouple storage format from internal format?
 enum class TextureFormat {
+	UNKNOWN,
 	R8,
 	RG8,
 	RGB8,
@@ -47,12 +48,17 @@ constexpr bool is_compressed(TextureFormat f) {
 
 // Get the texture format appropriate for an image of n 8 bit channels
 constexpr TextureFormat texture_format_from_channels(uint32_t n) {
+	using enum TextureFormat;
+
 	switch (n) {
-	case 1: return TextureFormat::R8;
-	case 2: return TextureFormat::RG8;
-	case 3: return TextureFormat::RGB8;
-	case 4: return TextureFormat::RGBA8;
+	case 1: return R8;
+	case 2: return RG8;
+	case 3: return RGB8;
+	case 4: return RGBA8;
 	}
+
+	assert(false);
+	return UNKNOWN;
 }
 
 

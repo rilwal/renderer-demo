@@ -87,9 +87,6 @@ struct Uniform {
 	UniformGetter(glm::mat3, Mat3, m3);
 	UniformGetter(glm::mat4, Mat4, m4);
 #undef UniformGetter
-	
-	template<> auto& get<Ref<Texture2D>>() { return tex; };
-
 
 
 #define UniformSetter(ct, dt, m) template<> void set<ct>(ct val) { changed = true; _data.m = val; }template<> void set_default<ct>(ct val) { _default.m = val; }
@@ -115,8 +112,6 @@ struct Uniform {
 	UniformSetter(glm::mat3, Mat3, m3);
 	UniformSetter(glm::mat4, Mat4, m4);
 #undef UniformSetter
-
-	template<> void set<Ref<Texture2D>>(Ref<Texture2D> val) { changed = true; tex = val; }
 
 	friend class Shader;
 
@@ -144,8 +139,6 @@ private:
 		glm::mat3 m3;
 		glm::mat4 m4;
 	} _data = {}, _default = {};
-
-	Ref<Texture2D> tex = {};
 };
 
 
@@ -193,6 +186,4 @@ private:
 	std::map<std::string, std::pair<float, float>> ranges = {};
 	std::map<std::string, float> steps = {};
 	std::map<std::string, bool> is_color = {};
-	std::map<std::string, std::string> texture_paths = {};
-
 };
