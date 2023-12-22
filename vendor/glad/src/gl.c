@@ -44,6 +44,7 @@ int GLAD_GL_VERSION_4_5 = 0;
 int GLAD_GL_VERSION_4_6 = 0;
 int GLAD_GL_ARB_bindless_texture = 0;
 int GLAD_GL_ARB_gpu_shader_int64 = 0;
+int GLAD_GL_ARB_texture_compression_bptc = 0;
 int GLAD_GL_NVX_gpu_memory_info = 0;
 
 
@@ -6690,6 +6691,7 @@ static int glad_gl_find_extensions_gl( int version) {
 
     GLAD_GL_ARB_bindless_texture = glad_gl_has_extension(version, exts, num_exts_i, exts_i, "GL_ARB_bindless_texture");
     GLAD_GL_ARB_gpu_shader_int64 = glad_gl_has_extension(version, exts, num_exts_i, exts_i, "GL_ARB_gpu_shader_int64");
+    GLAD_GL_ARB_texture_compression_bptc = glad_gl_has_extension(version, exts, num_exts_i, exts_i, "GL_ARB_texture_compression_bptc");
     GLAD_GL_NVX_gpu_memory_info = glad_gl_has_extension(version, exts, num_exts_i, exts_i, "GL_NVX_gpu_memory_info");
 
     glad_gl_free_extensions(exts_i, num_exts_i);

@@ -96,7 +96,7 @@ uniform float specular_strength = 0.5;
 const float PI = 3.141;
 
 layout(std140) uniform Lights {
-	Light lights[20];
+	Light lights[80];
 };
 
 layout(std140) uniform Materials {
@@ -147,6 +147,8 @@ uniform bool render_normal_map = false;
 uniform bool render_metallic_roughness_map = false;
 uniform bool render_normals = false;
 
+uniform int num_lights = 40;
+
 void main() {
 	vec3 light_color_bigger = light_color * light_intensity;
 
@@ -177,6 +179,11 @@ void main() {
 		}
 	}
 
+	if (render_normals) {
+		fragColour = vec4((N + glm::vec3(1)) / 2, 1.0);
+		return;
+	}
+
 	float metallic = mat.metallic_roughness.x;
 	float roughness = mat.metallic_roughness.y;
 
@@ -192,7 +199,7 @@ void main() {
 
 	vec3 lo = vec3(0);
 
-	for (int i = 0; i < 20; i++) {
+	for (int i = 0; i < num_lights; i++) {
 		Light l = lights[i];
 
 		vec3 L = normalize(l.position - vertex_position_worldspace);
@@ -225,7 +232,7 @@ void main() {
 	}
 	
 
-	vec3 ambient = vec3(0.1) * albedo;
+	vec3 ambient = vec3(0.0) * albedo;
 	vec3 color = ambient + lo;
 
 	color = color / (color + vec3(1.0));

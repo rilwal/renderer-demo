@@ -8,14 +8,14 @@
 #include "imgui.h"
 
 
-FILE* open_file(std::string filename, int retries) {
+FILE* open_file(std::filesystem::path filename, int retries) {
 	FILE* file;
 
 #ifdef _WIN32
-	errno_t error = fopen_s(&file, filename.c_str(), "rb");
+	errno_t error = fopen_s(&file, filename.string().c_str(), "rb");
 
 	if (error != 0) {
-		fprintf(stderr, "Failed to open file %s.\n", filename.c_str());
+		fprintf(stderr, "Failed to open file %s.\n", filename.string().c_str());
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
@@ -36,7 +36,7 @@ FILE* open_file(std::string filename, int retries) {
 }
 
 
-std::vector<uint8_t> load_file(std::string filename, size_t offset, size_t len, int retries) {
+std::vector<uint8_t> load_file(std::filesystem::path filename, size_t offset, size_t len, int retries) {
 	 std::vector<uint8_t> contents;
 
 	 FILE* file = open_file(filename, retries);
@@ -248,3 +248,6 @@ namespace ImGui {
 		PopID();
 	}
 }
+
+
+

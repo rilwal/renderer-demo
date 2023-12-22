@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asset_manager.hpp"
+#include "assets/asset_manager.hpp"
 
 #include <glm.hpp>
 #include "flecs.h"

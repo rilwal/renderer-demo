@@ -13,20 +13,11 @@
 #include "fastgltf/util.hpp"
 #include "fastgltf/tools.hpp"
 
-#include "stb_image.h"
-#include "spng.h"
-
+#include "util.hpp"
 #include "renderer.hpp"
+#include "assets/image/dds.hpp"
 
 
-// Represents an 2D image, for example read from a .png
-struct Image {
-    uint32_t width;
-    uint32_t height;
-    uint32_t channels;
-
-    std::vector<uint8_t> data;
-};
 
 
 uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
@@ -37,107 +28,40 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
         // TODO: Make sure it exists, and do somethign if it doesn't
         //      Might crash!!!
         auto& image = m_asset.images[*texture.imageIndex];
+        
+        // First let's make an image!
+        std::unique_ptr<Image> i = {};
+        
+        std::filesystem::path png_src;
 
-
-
-        std::string png_src;
-
-        spng_ctx* ctx = spng_ctx_new(0);
+        bool from_buffer = false;
 
         if (auto image_buffer = std::get_if<fastgltf::sources::Vector>(&image.data); image_buffer) {
             png_src = "Internal Buffer";
-            spng_set_png_buffer(ctx, image_buffer->bytes.data(), image_buffer->bytes.size());
+            i = std::move(load_image(image_buffer->bytes, std::format("Internal Buffer in GLTF File {}", m_path.string())));
         }
 
         if (auto image_uri = std::get_if<fastgltf::sources::URI>(&image.data); image_uri) {
             std::filesystem::path path = image_uri->uri.fspath();
             std::filesystem::path cwd_relative_path = m_asset_dir.string() + "/" + path.string();
+            std::filesystem::path dds_path = cwd_relative_path.replace_extension(".dds");
 
-            png_src = cwd_relative_path.string();
-
-            spng_set_png_file(ctx, open_file(png_src));
+            png_src = cwd_relative_path;
+            i = load_image(std::filesystem::exists(dds_path) ? dds_path : cwd_relative_path);
         }
 
-        spng_ihdr ihdr = {};
-        int error = spng_get_ihdr(ctx, &ihdr) != 0;
-        if (error) {
-            fprintf(stderr, "Error decoding PNG header (%s): %s\n", png_src.c_str(), spng_strerror(error));
-            return 0;
-        }
-
-        
-        int fmt = 0;
-        int gl_format = 0;
-        int gl_internal_format = 0;
-
-        switch (ihdr.color_type) {
-        case SPNG_COLOR_TYPE_GRAYSCALE:
-            fmt = SPNG_FMT_G8;
-            gl_format = GL_RED;
-            gl_internal_format = GL_RED;
-            break;
-        case SPNG_COLOR_TYPE_GRAYSCALE_ALPHA:
-            fmt = SPNG_FMT_GA8;
-            gl_format = GL_RG;
-            gl_internal_format = GL_RG;
-            break;
-        case SPNG_COLOR_TYPE_TRUECOLOR:
-            fmt = SPNG_FMT_RGB8;
-            gl_format = GL_RGB;
-            gl_internal_format = GL_RGB;
-            break;
-        case SPNG_COLOR_TYPE_TRUECOLOR_ALPHA:
-            fmt = SPNG_FMT_RGBA8;
-            gl_format = GL_RGBA;
-            gl_internal_format = GL_RGBA;
-            break;
-        }
-
-        size_t image_len;   
-
-        spng_decoded_image_size(ctx, fmt, &image_len);
-
-        std::vector<uint8_t> image_data;
-        image_data.resize(image_len);
-
-        spng_decode_image(ctx, image_data.data(), image_data.size(), fmt, 0);
-
-        // Let's try the simplest implementation: bindless textures
-        // It's probably better to use a virtual texture atlas or a teture array though!
-        uint32_t texture_id = 0;
-        uint32_t sampler_id = 0;
-
-        glCreateTextures(GL_TEXTURE_2D, 1, &texture_id);
-        glCreateSamplers(1, &sampler_id);
-
-        glBindTexture(GL_TEXTURE_2D, texture_id);
-        glTexImage2D(GL_TEXTURE_2D, 0, gl_internal_format, ihdr.width, ihdr.height, 0, gl_format, GL_UNSIGNED_BYTE, image_data.data());
-
-        image_data.clear();
-
-        glGenerateTextureMipmap(texture_id);
+        Sampler my_sampler = {};
 
         if (texture.samplerIndex) {
-            auto& sampler = m_asset.samplers[*texture.samplerIndex];
-            uint32_t min_filter = (uint32_t)sampler.minFilter.value_or(GL_LINEAR);
-            uint32_t mag_filter = (uint32_t)sampler.magFilter.value_or(GL_LINEAR);
+            auto& gltf_sampler = m_asset.samplers[*texture.samplerIndex];
+            if (gltf_sampler.magFilter) my_sampler.mag_filter = static_cast<TextureFilter>(*gltf_sampler.magFilter);
+            if (gltf_sampler.minFilter) my_sampler.min_filter = static_cast<TextureFilter>(*gltf_sampler.minFilter);;
 
-
-            glSamplerParameteri(sampler_id, GL_TEXTURE_MIN_FILTER, min_filter);
-            glSamplerParameteri(sampler_id, GL_TEXTURE_MAG_FILTER, mag_filter);
-            glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_S, (uint32_t)sampler.wrapS);
-            glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_T, (uint32_t)sampler.wrapT);
-
-            float border_color[4] = { 0, 0, 0, 0 };
-            glSamplerParameterfv(sampler_id, GL_TEXTURE_BORDER_COLOR, border_color);
-
-        }
-        else {
-            std::cerr << "Textures without samplers are not currently supported!\n";
+            my_sampler.wrap_s = static_cast<TextureWrap>(gltf_sampler.wrapS);
+            my_sampler.wrap_t = static_cast<TextureWrap>(gltf_sampler.wrapT);
         }
 
-        uint64_t handle = glGetTextureSamplerHandleARB(texture_id, sampler_id);
-        glMakeTextureHandleResidentARB(handle); // TODO: Investigate the effect of making too many textures resident?
+        uint64_t handle = make_bindless_texture(std::move(i), my_sampler);
         m_texture_map[texture_idx] = handle;
     }
 

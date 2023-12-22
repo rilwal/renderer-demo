@@ -45,7 +45,7 @@ struct GLFWwindow;
 #include "util.hpp"
 #include "ecs_componets.hpp"
 
-#include "asset_manager.hpp"
+#include "assets/asset_manager.hpp"
 #include "vertex_buffer.hpp"
 #include "index_buffer.hpp"
 #include "shader.hpp"
@@ -138,8 +138,8 @@ public:
 
 		
 		// Any changes to GPU resident lights should cause the dirty bit to be set
-		ecs.observer<const TransformComponent, const Light, GPUResident>().event(flecs::OnSet | flecs::OnAdd).each(
-			[](flecs::entity e, const TransformComponent t, const Light l, GPUResident& gpu_resident){
+		ecs.observer<const TransformComponent, const Light, flecs::pair<GPUResident, Light>>().event(flecs::OnSet | flecs::OnAdd).each(
+			[](flecs::entity e, const TransformComponent t, const Light l, GPUResident& gpu_resident) {
 			gpu_resident.is_dirty = true;
 		});
 
@@ -243,12 +243,11 @@ public:
 			}
 		});
 		
-		m_light_buffer.soft_clear();
 
 		ecs.defer_begin();
 		m_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light) {
-			if (e.has<GPUResident>()) {
-				GPUResident& resident = *e.get_mut<GPUResident>();
+			if (e.has<GPUResident, Light>()) {
+				GPUResident& resident = *e.get_mut<GPUResident, Light>();
 
 				if (resident.is_dirty) {
 					glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
@@ -256,9 +255,12 @@ public:
 				}
 			}
 			else {
+				// TODO: Check for locality etc. and don't make resident all lights all the time
+				//			(or do, lights are small maybe??)
+				//			(or don't, cache locality is worse with many lights???)
 				glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
 				size_t addr = m_light_buffer.push_back(light.STD140(world_pos));
-				e.set<GPUResident>({ addr, false });
+				e.set<GPUResident, Light>({ addr, false });
 
 			}
 		});
@@ -359,9 +361,6 @@ private:
 
 	flecs::query<const TransformComponent, const Model> m_draw_query;
 	flecs::query<const TransformComponent, const Light> m_light_query;
-
-	flecs::query<const TransformComponent, const Light, const GPUResident> m_resident_light_query;
-	flecs::query<const TransformComponent, const Light, const GPUResident> m_non_resident_light_query;
 
 
 	Ref<Shader> m_main_shader;

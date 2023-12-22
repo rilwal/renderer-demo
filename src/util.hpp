@@ -4,7 +4,8 @@
 #include <vector>
 #include <optional>
 #include <iostream>
-
+#include <filesystem>
+#include <bitset>
 
 #include "imgui.h"
 
@@ -36,11 +37,11 @@ template<typename T>
 using Opt = std::optional<T>;
 
 
-FILE* open_file(std::string filename, int retries = 5);
+FILE* open_file(std::filesystem::path filename, int retries = 5);
 
 
 // Utility function to load a whole file
-std::vector<uint8_t> load_file(std::string filename, size_t offset = 0, size_t len = -1, int retries = 5);
+std::vector<uint8_t> load_file(std::filesystem::path, size_t offset = 0, size_t len = -1, int retries = 5);
 
 std::string gl_error_name(uint32_t error_code);
 
@@ -85,4 +86,64 @@ namespace ImGui {
 		~Tag();
 	};
 }
+
+
+// A bitset that can be indexed by an enum class
+// TODO: Write a similar helper class for regular enum classes (that don't represent bitsets)
+template <typename Enum>
+struct EnumBitset {
+	using Underlying = std::underlying_type<Enum>::type;
+
+	EnumBitset<Enum>() : m_data() {	}
+	EnumBitset<Enum>(Underlying val) : m_data(val) {	}
+
+	bool operator[](Enum idx) const {
+		return m_data[(Underlying)idx];
+	}
+
+	auto operator[](Enum idx) {
+		return m_data[(Underlying)idx];
+	}
+
+	operator bool() {
+		return m_data.any();
+	}
+
+	operator Underlying() {
+		return static_cast<Underlying>(m_data);
+	}
+
+private:
+	std::bitset<sizeof(Underlying)> m_data;
+};
+
+
+
+
+
+template<typename T>
+class Enum {
+public:
+	using Underlying = std::underlying_type<T>::type;
+	
+	Enum() : m_value() {};
+	Enum(T val) : m_value(val) {};
+	Enum(Underlying val) : m_value(static_cast<T>(val)) {};
+
+	operator T() const {
+		return m_value;
+	}
+
+	operator T&() {
+		return m_value;
+	}
+
+	operator Underlying() {
+		return static_cast<Underlying>(m_value);
+	}
+
+private:
+	T m_value;
+};
+
 

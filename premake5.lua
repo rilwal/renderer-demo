@@ -39,26 +39,6 @@ project "GLFW"
    }
 
 
-project "spng"
-   kind "SharedLib"
-
-   defines {
-      "SPNG_USE_MINIZ",
-      "SPNG_SSE=4"
-   }
-
-   files {
-      "vendor/spng/spng.c",
-      "vendor/spng/spng.h",
-
-      "vendor/miniz/miniz.c"
-   }
-
-   includedirs {
-      "vendor/miniz",
-   }
-
-
 project "imgui"
    kind "StaticLib"
 
@@ -106,15 +86,14 @@ project "rendererer-demo"
       "vendor/stb",
       "vendor/spng",
       "vendor/imguizmo"
-
    }
+
 
    links 
    {
        "GLFW",
        "fastgltf",
        "fastgltf_simdjson",
-       "spng",
        "imgui"
    }
 
@@ -131,5 +110,7 @@ project "rendererer-demo"
       }
 
    filter {}
+
+   
 
 

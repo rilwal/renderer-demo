@@ -21,7 +21,7 @@
 
 #include "stb_image.h"
 
-#include "asset_manager.hpp"
+#include "assets/asset_manager.hpp"
 #include "ecs_componets.hpp"
 
 #include "renderer/camera.hpp"
@@ -33,8 +33,6 @@
 
 #include "renderer/vertex_buffer.hpp"
 #include "renderer/index_buffer.hpp"
-
-
 
 
 
@@ -248,13 +246,7 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
 
 
 
-
-
-
-
 int main() {
-
-
     ecs = flecs::world();
     flecs::entity root_node = ecs.entity("Root")
         .add<Position>()
@@ -278,7 +270,7 @@ int main() {
 
             update_tree_transforms(e, parent_transform);
         });
-
+        
 
         bool running = true;
 
@@ -291,7 +283,8 @@ int main() {
         MeshBundle bundle;
 
 
-        //load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
+        //load_gltf("assets/models/boombox.gltf", root_node, bundle);
+        load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
 
         MeshHandle cube_mesh = bundle.add_entry(cube_1);
         MeshHandle sphere_mesh = bundle.add_entry(sphere);
@@ -325,7 +318,7 @@ int main() {
 
         float total_time = 0;
 
-        constexpr bool test_scene = true;
+        constexpr bool test_scene = false;
 
         if (test_scene) {
             // Spawn a classic sphere grid!
@@ -371,29 +364,6 @@ int main() {
                 set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14f, 3.14f))), Scale(random_float(0.5f, 1.5f)));
             }
 
-            auto lights = ecs.entity("Lights")
-                .add<Rotation>()
-                .add<Scale>()
-                .set<Position>({})
-                .child_of(root_node);
-
-
-            auto e = ecs.entity(std::format("Master Light").c_str())
-                .child_of(lights)
-                .add<Scale>()
-                .add<Rotation>()
-                .set<Position>(glm::vec3{ 0.f, 0.f, 0.f })
-                .set<Light>({ glm::vec3(1, 1, 1) , 100 });
-
-
-            for (int i = 0; i < 40; i++) {
-                auto e = ecs.entity(std::format("Light {}", i).c_str())
-                    .child_of(lights)
-                    .add<Scale>()
-                    .add<Rotation>()
-                    .set<Position>(random_vec3(-10, 10))
-                    .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
-            }
 
 
             MaterialHandle m = bundle.register_material({ .diffuse_color = glm::vec3(1), .metallic_roughness = {1, .1} });
@@ -408,6 +378,30 @@ int main() {
         }
 
 
+       
+
+
+        auto light = ecs.entity("Light")
+            .child_of(root_node)
+            .add<Scale>()
+            .add<Rotation>()
+            .set<Position>(glm::vec3(0, 3, 0))
+            .set<Light>({ glm::vec3(1) , 120});
+
+        /*auto lights = ecs.entity("Lights")
+            .add<Rotation>()
+            .add<Scale>()
+            .set<Position>({})
+            .child_of(root_node);
+
+        for (int i = 0; i < 0; i++) {
+            auto e = ecs.entity(std::format("Light {}", i).c_str())
+                .child_of(lights)
+                .add<Scale>()
+                .add<Rotation>()
+                .set<Position>(random_vec3(-10, 10))
+                .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
+        }*/
 
 
         while (!glfwWindowShouldClose(renderer.get_platform_window())) {

@@ -4,9 +4,7 @@
 #include <glad/gl.h>
 #include <cstdio>
 
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#undef STB_IMAGE_IMPLEMENTATION
 
 #include "util.hpp"
 

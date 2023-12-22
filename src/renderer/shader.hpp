@@ -22,7 +22,7 @@
 #include <variant>
 
 #include "types.hpp"
-#include "asset_manager.hpp"
+#include "assets/asset_manager.hpp"
 #include "texture.hpp"
 
 
