@@ -5,6 +5,8 @@
 
 
 bool is_dds(std::vector<uint8_t> buffer) {
+	if (buffer.size() < 4) return false;
+
 	uint32_t magic = *(uint32_t*)buffer.data();
 	return magic == g_dds_magic;
 }

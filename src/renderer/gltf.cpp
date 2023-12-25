@@ -44,7 +44,8 @@ uint64_t GLTF::get_texture(MeshBundle& mb, size_t texture_idx) {
         if (auto image_uri = std::get_if<fastgltf::sources::URI>(&image.data); image_uri) {
             std::filesystem::path path = image_uri->uri.fspath();
             std::filesystem::path cwd_relative_path = m_asset_dir.string() + "/" + path.string();
-            std::filesystem::path dds_path = cwd_relative_path.replace_extension(".dds");
+            std::filesystem::path dds_path = cwd_relative_path;
+            dds_path.replace_extension(".dds");
 
             png_src = cwd_relative_path;
             i = load_image(std::filesystem::exists(dds_path) ? dds_path : cwd_relative_path);
@@ -180,7 +181,7 @@ void GLTF::iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity p
     for (auto& node_index : node_list) {
         auto& node = m_asset.nodes[node_index];
 
-        auto node_entity = ecs.entity(node.name.c_str())
+        auto node_entity = ecs.prefab(node.name.c_str())
             .child_of(parent);
 
         fastgltf::Node::TRS transform = std::get<fastgltf::Node::TRS>(node.transform);
@@ -239,11 +240,10 @@ flecs::entity GLTF::load(std::filesystem::path path, flecs::entity parent, MeshB
         m_asset = std::move(asset.get());
     }
 
-    auto gltf_file_node = ecs.entity(m_path.stem().string().c_str())
+    auto gltf_file_node = ecs.prefab(path.stem().string().c_str())
         .add<Position>()
         .add<Rotation>()
-        .add<Scale>()
-        .child_of(parent);
+        .add<Scale>();
 
     for (auto& scene : m_asset.scenes) {
         // At some point I want to make some kind of prefab system,
@@ -256,7 +256,7 @@ flecs::entity GLTF::load(std::filesystem::path path, flecs::entity parent, MeshB
         else {
             const char* name = scene.name.c_str();
 
-            scene_node = ecs.entity(name)
+            scene_node = ecs.prefab(name)
                 .add<Position>()
                 .add<Rotation>()
                 .add<Scale>()
@@ -266,7 +266,7 @@ flecs::entity GLTF::load(std::filesystem::path path, flecs::entity parent, MeshB
         iterate_node_list(mb, scene.nodeIndices, scene_node);
     }
 
-    return parent;
+    return gltf_file_node;
 }
 
 

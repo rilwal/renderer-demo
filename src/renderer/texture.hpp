@@ -8,7 +8,7 @@
 #include "types.hpp"
 #include "gtc/type_ptr.hpp"
 
-
+#include "buffer.hpp"
 
 
 enum class TextureFilter : uint32_t {
@@ -36,7 +36,7 @@ struct Sampler {
 };
 
 
-inline uint64_t make_bindless_texture(std::unique_ptr<Image> i, Sampler s = {}) {
+inline uint64_t make_bindless_texture(Ref<Image> i, Sampler s = {}) {
 	uint32_t texture_id = 0;
 	uint32_t sampler_id = 0;
 
@@ -51,6 +51,7 @@ inline uint64_t make_bindless_texture(std::unique_ptr<Image> i, Sampler s = {}) 
 	else {
 		glTexImage2D(GL_TEXTURE_2D, 0, get_gl_format(i->format), i->width, i->height, 0, get_gl_format(i->format), GL_UNSIGNED_BYTE, i->data.data());
 	}
+
 
 	glGenerateMipmap(GL_TEXTURE_2D);
 

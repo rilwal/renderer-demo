@@ -282,9 +282,32 @@ int main() {
 
         MeshBundle bundle;
 
+        auto chess = load_gltf("assets/models/chess/ABeautifulGame.gltf", root_node, bundle);
 
-        //load_gltf("assets/models/boombox.gltf", root_node, bundle);
-        load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
+        ecs.entity("Chess")
+            .child_of(root_node)
+            .is_a(chess);
+
+        auto boombox = load_gltf("assets/models/boombox.gltf", root_node, bundle);
+        boombox.lookup("BoomBox").set<Scale>(50);
+
+        auto boombox_holder = ecs.entity("Boomboxes!")
+            .child_of(root_node);
+
+        set_entity_transform(boombox_holder);
+
+        for (int i = 0; i < 10; i++) {
+            for (int j = 0; j < 10; j++) {
+                auto n = ecs.entity(std::format("Boombox {} {}", i, j).c_str()).is_a(boombox)
+                    .set<Position>(glm::vec3{ i - 5, -5, j - 5 })
+                    .child_of(boombox_holder);
+
+               
+                    
+            }
+        }
+
+        // load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
 
         MeshHandle cube_mesh = bundle.add_entry(cube_1);
         MeshHandle sphere_mesh = bundle.add_entry(sphere);
@@ -306,7 +329,7 @@ int main() {
         c.projection = glm::perspective(45.0, 16.0 / 9.0, 0.01, 100.0);
 
 
-        std::chrono::high_resolution_clock clock;
+        std::chrono::high_resolution_clock clock = {};
 
         float time = float(std::chrono::duration_cast<std::chrono::milliseconds>(clock.now().time_since_epoch()).count()) * 0.001f;
         float last_time = time;
@@ -386,22 +409,22 @@ int main() {
             .add<Scale>()
             .add<Rotation>()
             .set<Position>(glm::vec3(0, 3, 0))
-            .set<Light>({ glm::vec3(1) , 120});
+            .set<Light>({ glm::vec3(1) , 1200});
 
-        /*auto lights = ecs.entity("Lights")
+        auto lights = ecs.entity("Lights")
             .add<Rotation>()
             .add<Scale>()
             .set<Position>({})
             .child_of(root_node);
 
-        for (int i = 0; i < 0; i++) {
+        for (int i = 0; i < 10; i++) {
             auto e = ecs.entity(std::format("Light {}", i).c_str())
                 .child_of(lights)
                 .add<Scale>()
                 .add<Rotation>()
                 .set<Position>(random_vec3(-10, 10))
                 .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
-        }*/
+        }
 
 
         while (!glfwWindowShouldClose(renderer.get_platform_window())) {

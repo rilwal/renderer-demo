@@ -232,7 +232,7 @@ void main() {
 	}
 	
 
-	vec3 ambient = vec3(0.0) * albedo;
+	vec3 ambient = vec3(0.02) * albedo;
 	vec3 color = ambient + lo;
 
 	color = color / (color + vec3(1.0));
