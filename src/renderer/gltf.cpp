@@ -190,21 +190,20 @@ void GLTF::iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity p
         Rotation node_rotation = glm::quat(transform.rotation[3], transform.rotation[0], transform.rotation[1], transform.rotation[2]);
         Scale node_scale = glm::vec3{ transform.scale[0], transform.scale[1], transform.scale[2] };
 
-        node_entity.set<Position>(node_translation);
-        node_entity.set<Rotation>(node_rotation);
-        node_entity.set<Scale>(node_scale);
-
         glm::mat4 local_transform = node_translation.mat4() * node_rotation.mat4() * node_scale.mat4();
+
 
         glm::mat4 parent_transform = glm::mat4(1);
 
-        if (parent.has<TransformComponent>()) {
-            parent_transform = *parent.get<TransformComponent>();
+        if (parent.has<TransformComponent, World>()) {
+            parent_transform = *parent.get<TransformComponent, World>();
         }
 
-        glm::mat4 global_transform = parent_transform * local_transform;
 
-        node_entity.set<TransformComponent>({ global_transform });
+        glm::mat4 world_transform = parent_transform * local_transform;
+
+        node_entity.set<TransformComponent, Local>({ local_transform });
+        node_entity.set<TransformComponent, World>({ world_transform });
 
         if (node.meshIndex) {
             size_t mesh_index = *node.meshIndex;
@@ -241,9 +240,8 @@ flecs::entity GLTF::load(std::filesystem::path path, flecs::entity parent, MeshB
     }
 
     auto gltf_file_node = ecs.prefab(path.stem().string().c_str())
-        .add<Position>()
-        .add<Rotation>()
-        .add<Scale>();
+        .add<TransformComponent, Local>()
+        .add<TransformComponent, World>();
 
     for (auto& scene : m_asset.scenes) {
         // At some point I want to make some kind of prefab system,
@@ -257,9 +255,8 @@ flecs::entity GLTF::load(std::filesystem::path path, flecs::entity parent, MeshB
             const char* name = scene.name.c_str();
 
             scene_node = ecs.prefab(name)
-                .add<Position>()
-                .add<Rotation>()
-                .add<Scale>()
+                .add<TransformComponent, Local>()
+                .add<TransformComponent, World>()
                 .child_of(gltf_file_node);
         }
 

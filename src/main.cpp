@@ -36,21 +36,23 @@
 
 
 
-void set_entity_transform (flecs::entity& e, Position translation=Position(), Rotation rotation= Rotation(), Scale scale= Scale()) {
-    e.set<Position>(translation);
-    e.set<Rotation>(rotation);
-    e.set<Scale>(scale);
+void set_entity_transform(flecs::entity& e, Position translation = Position(), Rotation rotation = Rotation(), Scale scale = Scale()) {
 
     flecs::entity parent = e.parent();
     glm::mat4 parent_transform = glm::mat4(1);
 
     if (parent) {
-        if (parent.has<TransformComponent>()) {
-            parent_transform = *parent.get<TransformComponent>();
+        if (parent.has<TransformComponent, World>()) {
+            parent_transform = *parent.get<TransformComponent, World>();
         }
     }
 
-    e.set<TransformComponent>(translation.mat4() * rotation.mat4() * scale.mat4());
+    glm::mat4 local_transform = translation.mat4() * rotation.mat4() * scale.mat4();
+    glm::mat4 world_transform = parent_transform * local_transform;
+
+    e.set<TransformComponent, Local>({ local_transform });
+    e.set<TransformComponent, World>({ world_transform });
+
 }
 
 
@@ -83,22 +85,15 @@ flecs::entity spawn_cube(MeshBundle& mb, Model model) {
 
 void update_tree_transforms(flecs::entity e, glm::mat4 parent_transform = glm::mat4(1)) {
     // Get entity position
-    const Position* p = e.get<Position>();
-    const Rotation* r = e.get<Rotation>();
-    const Scale* s = e.get<Scale>();
 
-    const Position position = p ? *p : Position(glm::vec3(0));
-    const Rotation rotation = r ? *r : Rotation(glm::quat(1, 0, 0, 0));
-    const Scale    scale = s ? *s : Scale(glm::vec3(1));
+    glm::mat4 local_transform = e.has<TransformComponent, Local>() ? glm::mat4(*e.get<TransformComponent, Local>()) : glm::mat4(1);
+    glm::mat4 world_transform = parent_transform * local_transform;
 
-    glm::mat4 local_transform = position.mat4() * rotation.mat4() * scale.mat4();
-    glm::mat4 global_transform = parent_transform * local_transform;
-
-    e.set<TransformComponent>(global_transform);
+    e.set<TransformComponent, World>({ world_transform });
 
     // Iterate children recursively
     e.children([&](flecs::entity child) {
-        update_tree_transforms(child, global_transform);
+        update_tree_transforms(child, world_transform);
         });
 }
 
@@ -111,8 +106,6 @@ void entity_inspector_iterate(flecs::entity e) {
         if (ImGui::IsItemClicked()) {
             selected_entity = e;
         }
-
-
 
 
         auto name_order = [](flecs::entity_t a, const void* name_a, flecs::entity_t b, const void* name_b) {
@@ -199,23 +192,7 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
 
     if (ImGui::Begin("Entity Inspector")) {
         if (selected_entity.is_alive()) {
-            EditTransform(camera, selected_entity.get_mut<TransformComponent>()->transform);
-
-            if (ImGui::DragFloat3("Position", (float*)selected_entity.get_mut<Position>(), 0.1f)) {
-                selected_entity.modified<Position>();
-            }
-
-            if (selected_entity.has<Rotation>()) {
-                glm::quat rotation = *selected_entity.get<Rotation>();
-                if (ImGui::DragFloat4("Rotation", (float*)&rotation, 0.05f, -3.14f, 3.14f)) {
-                    selected_entity.set<Rotation>(rotation);
-                    selected_entity.modified<Rotation>();
-                }
-            }
-
-            if (ImGui::DragFloat3("Scale", (float*)selected_entity.get_mut<Scale>(), 0.1f)) {
-                selected_entity.modified<Scale>();
-            }
+            EditTransform(camera, selected_entity.get_mut<TransformComponent, World>()->transform);
 
             if (selected_entity.has<Model>()) {
                 auto model = *selected_entity.get<Model>();
@@ -248,6 +225,31 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
 
 int main() {
     ecs = flecs::world();
+
+
+    ecs.observer<const flecs::pair<TransformComponent, Local>>().event(flecs::OnSet | flecs::OnAdd).each(
+        [](flecs::entity e, const TransformComponent& T) {
+            // If any of these components are changed, let's update the translation matrices for all the children!!
+            auto parent = e.parent();
+            glm::mat4 parent_transform = glm::mat4(1);
+
+            if (parent && parent.has<TransformComponent, World>()) {
+                parent_transform = *parent.get<TransformComponent, World>();
+            }
+
+            update_tree_transforms(e, parent_transform);
+        }
+    );
+
+
+    ecs.observer<const Position, const Rotation, const Scale>().event(flecs::OnSet | flecs::OnAdd).each(
+        [](flecs::entity e, const Position p, const Rotation r, const Scale s) {
+            glm::mat4 local_transform = p.mat4() * r.mat4() * s.mat4();
+            e.set<TransformComponent, Local>({ local_transform });
+        }
+    );
+
+
     flecs::entity root_node = ecs.entity("Root")
         .add<Position>()
         .add<Rotation>()
@@ -258,18 +260,7 @@ int main() {
     Renderer renderer;
     renderer.initialize();
     {    
-        ecs.observer<const Position, const Rotation, const Scale>().event(flecs::OnSet | flecs::OnAdd).each(
-        [](flecs::entity e, const Position&, const Rotation&, const Scale&) {
-            // If any of these components are changed, let's update the translation matrices for all the children!!
-            auto parent = e.parent();
-            glm::mat4 parent_transform = glm::mat4(1);
 
-            if (parent && parent.has<TransformComponent>()) {
-                parent_transform = *parent.get<TransformComponent>();
-            }
-
-            update_tree_transforms(e, parent_transform);
-        });
         
 
         bool running = true;
@@ -282,11 +273,6 @@ int main() {
 
         MeshBundle bundle;
 
-        auto chess = load_gltf("assets/models/chess/ABeautifulGame.gltf", root_node, bundle);
-
-        ecs.entity("Chess")
-            .child_of(root_node)
-            .is_a(chess);
 
         auto boombox = load_gltf("assets/models/boombox.gltf", root_node, bundle);
         boombox.lookup("BoomBox").set<Scale>(50);
@@ -301,8 +287,6 @@ int main() {
                 auto n = ecs.entity(std::format("Boombox {} {}", i, j).c_str()).is_a(boombox)
                     .set<Position>(glm::vec3{ i - 5, -5, j - 5 })
                     .child_of(boombox_holder);
-
-               
                     
             }
         }
@@ -341,7 +325,7 @@ int main() {
 
         float total_time = 0;
 
-        constexpr bool test_scene = false;
+        constexpr bool test_scene = true;
 
         if (test_scene) {
             // Spawn a classic sphere grid!
@@ -420,10 +404,9 @@ int main() {
         for (int i = 0; i < 10; i++) {
             auto e = ecs.entity(std::format("Light {}", i).c_str())
                 .child_of(lights)
-                .add<Scale>()
-                .add<Rotation>()
-                .set<Position>(random_vec3(-10, 10))
                 .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
+
+            set_entity_transform(e, random_vec3(-10, 10));
         }
 
 

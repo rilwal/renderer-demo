@@ -11,11 +11,18 @@
 extern flecs::world ecs;
 
 
+// These are tags for transforms.
+// Local is the local transform, world is the world transform
+struct World {};
+struct Local {};
+
+
+
 // We wanna just directly set our transformation matrcices!
 struct TransformComponent {
     glm::mat4 transform;
 
-    TransformComponent() : transform() {};
+    TransformComponent() : transform(1) {};
 
     TransformComponent(glm::mat4 other) {
         transform = other;

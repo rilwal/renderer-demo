@@ -92,6 +92,42 @@ private:
 };
 
 
+inline bool within(float a, float b, float c) {
+	return b >= a && b <= c;
+}
+
+
+// Adapted from https://bruop.github.io/frustum_culling/
+inline bool test_aabb(glm::mat4 mvp, glm::vec3 min, glm::vec3 max) {
+	glm::vec4 corners[8] = {
+		{min.x, min.y, min.z, 1.0}, // x y z
+		{max.x, min.y, min.z, 1.0}, // X y z
+		{min.x, max.y, min.z, 1.0}, // x Y z
+		{max.x, max.y, min.z, 1.0}, // X Y z
+
+		{min.x, min.y, max.z, 1.0}, // x y Z
+		{max.x, min.y, max.z, 1.0}, // X y Z
+		{min.x, max.y, max.z, 1.0}, // x Y Z
+		{max.x, max.y, max.z, 1.0}, // X Y Z
+	};
+
+	bool inside = false;
+
+	for (size_t corner_idx = 0; corner_idx < 8; corner_idx++) {
+		// Transform vertex
+		glm::vec4 corner = mvp * corners[corner_idx];
+		// Check vertex against clip space bounds
+		inside = inside ||
+			within(-corner.w, corner.x, corner.w) &&
+			within(-corner.w, corner.y, corner.w) &&
+			within(0.0f, corner.z, corner.w);
+	}
+	return inside;
+
+}
+
+
+
 // This is a tag structure to specify that a mesh is GPU Resident.
 // We will use it for materials, lights and models
 struct GPUResident {
@@ -130,10 +166,10 @@ public:
 		m_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 4);
 		m_per_idx_buffer.set_per_instance(true);
 
-		m_draw_query = ecs.query_builder<const TransformComponent, const Model>()
+		m_draw_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Model>()
 			.build();
 
-		m_light_query = ecs.query_builder<const TransformComponent, const Light>()
+		m_light_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Light>()
 			.build();
 
 		
@@ -164,16 +200,24 @@ public:
 		uint32_t index_count = static_cast<uint32_t>(m->indices.size());
 		uint32_t vertex_count = static_cast<uint32_t>(m->vertices.size());
 
-		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count });
+		glm::vec3 min = {}, max = {}; // AABB
 
-		cumulative_idx_count += index_count;
-		cumulative_vertex_count += vertex_count;
+
+
 
 		// Now add the indices to the index buffer
 		m_index_buffer.extend(m->indices);
 
 		std::vector<float> vertices;
 		for (uint32_t i = 0; i < vertex_count; i++) {
+			if (m->vertices[i].x < min.x) min.x = m->vertices[i].x;
+			if (m->vertices[i].y < min.y) min.y = m->vertices[i].y;
+			if (m->vertices[i].z < min.z) min.z = m->vertices[i].z;
+
+			if (m->vertices[i].x > max.x) max.x = m->vertices[i].x;
+			if (m->vertices[i].y > max.y) max.y = m->vertices[i].y;
+			if (m->vertices[i].z > max.z) max.z = m->vertices[i].z;
+
 			vertices.push_back(m->vertices[i].x);
 			vertices.push_back(m->vertices[i].y);
 			vertices.push_back(m->vertices[i].z);
@@ -203,6 +247,11 @@ public:
 			}
 		}
 
+		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max });
+
+		cumulative_idx_count += index_count;
+		cumulative_vertex_count += vertex_count;
+
 		m_vertex_buffer.extend(vertices);
 
 		return index;
@@ -229,16 +278,21 @@ public:
 				auto& material = m_materials[material_handle];
 
 				if (!material.blend) {
-					command_list.push_back({
-						mesh.num_vertices,
-						1,
-						mesh.first_idx,
-						mesh.base_vertex,
-						i++
+					glm::mat4 mvp = (glm::mat4)transform * vp;
+
+					//if (!test_aabb(mvp, mesh.aabb_min, mesh.aabb_max)) {
+						command_list.push_back({
+							mesh.num_vertices,
+							1,
+							mesh.first_idx,
+							mesh.base_vertex,
+							i++
 						});
 
-					per_instance_data.push_back({ transform, material_handle });
-					m_rendered_tri_count += mesh.num_vertices / 3;
+						per_instance_data.push_back({ transform, material_handle });
+						m_rendered_tri_count += mesh.num_vertices / 3;
+					//}
+
 				}
 			}
 		});
@@ -329,6 +383,8 @@ public:
 		uint32_t num_vertices;
 		uint32_t first_idx;
 		int32_t base_vertex;
+		glm::vec3 aabb_min;
+		glm::vec3 aabb_max;
 	};
 
 	Entry get_entry(uint32_t index) {
@@ -360,8 +416,8 @@ private:
 
 	IndexBuffer m_index_buffer;
 
-	flecs::query<const TransformComponent, const Model> m_draw_query;
-	flecs::query<const TransformComponent, const Light> m_light_query;
+	flecs::query<const flecs::pair<TransformComponent, World>, const Model> m_draw_query;
+	flecs::query<const flecs::pair<TransformComponent, World>, const Light> m_light_query;
 
 
 	Ref<Shader> m_main_shader;
