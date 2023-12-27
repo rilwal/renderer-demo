@@ -109,11 +109,12 @@ uint32_t GLTF::get_material(MeshBundle& mb, size_t material_idx) {
 }
 
 
-Model GLTF::get_model(MeshBundle& mb, size_t mesh_idx) {
-    if (!m_model_map.contains(mesh_idx)) {
+void GLTF::get_model(MeshBundle& mb, size_t mesh_idx, flecs::entity node_entity) {
+    //if (!m_model_map.contains(mesh_idx)) {
         auto& mesh = m_asset.meshes[mesh_idx];
-        Model model;
+        bool flat = mesh.primitives.size() == 1;
 
+        int i = 0;
         for (auto& primitive : mesh.primitives) {
             MeshHandle mesh_handle = 0;
             MaterialHandle material_handle = default_material;
@@ -157,13 +158,23 @@ Model GLTF::get_model(MeshBundle& mb, size_t mesh_idx) {
             }
 
             mesh_handle = mb.add_entry(m);
-            model.meshes.push_back({ mesh_handle, material_handle });
+
+            if (flat) {
+                node_entity.set<Model>({ mesh_handle, material_handle });
+            }
+            else {
+                ecs.entity(std::format("Primitive {}", i++).c_str())
+                    .child_of(node_entity)
+                    .add<LocalTransform>()
+                    .set<Model>({ mesh_handle, material_handle });
+            }
+
         }
 
-        m_model_map[mesh_idx] = model;
-    }
+        //m_model_map[mesh_idx] = model;
+    //}
 
-    return m_model_map[mesh_idx];
+    //return;
 }
 
 
@@ -207,8 +218,8 @@ void GLTF::iterate_node_list(MeshBundle& mb, NodeList node_list, flecs::entity p
 
         if (node.meshIndex) {
             size_t mesh_index = *node.meshIndex;
-            Model m = get_model(mb, mesh_index);
-            node_entity.set<Model>(m);
+            get_model(mb, mesh_index, node_entity);
+            //node_entity.set<Model>(m);
         }
 
         if (node.lightIndex) {

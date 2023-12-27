@@ -205,16 +205,12 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
             if (selected_entity.has<Model>()) {
                 auto model = *selected_entity.get<Model>();
 
-                size_t i = 0;
-                for (auto& [mesh, material] : model.meshes) {
-                    i++;
-                    auto entry = bundle.get_entry(model.meshes[0].first);
+                auto& [mesh, material] = model.mesh;
+                auto entry = bundle.get_entry(model.mesh.first);
 
-                    ImGui::Text("Mesh %d", i);
-                    ImGui::Text("Number of indices: %u", entry.num_vertices);
-                    ImGui::Text("Base vertex: %d", entry.base_vertex);
-                    ImGui::Text("Base idx: %u", entry.first_idx);
-                }
+                ImGui::Text("Number of indices: %u", entry.num_vertices);
+                ImGui::Text("Base vertex: %d", entry.base_vertex);
+                ImGui::Text("Base idx: %u", entry.first_idx);
             }
 
             if (selected_entity.has<Light>()) {
@@ -314,7 +310,11 @@ int main() {
             }
         }
 
-        // load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
+        //auto sponza = load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
+
+        //ecs.entity("My Sponza")
+        //    .child_of(root_node)
+        //    .is_a(sponza);
 
         MeshHandle cube_mesh = bundle.add_entry(cube_1);
         MeshHandle sphere_mesh = bundle.add_entry(sphere);

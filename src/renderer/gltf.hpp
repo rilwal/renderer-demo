@@ -19,7 +19,7 @@ class GLTF {
 public:
 	using NodeList = FASTGLTF_FG_PMR_NS::MaybeSmallVector<std::size_t>;
 
-	Model get_model(MeshBundle& mb, size_t mesh_idx);
+	void get_model(MeshBundle& mb, size_t mesh_idx, flecs::entity node_entity);
 	uint32_t get_material(MeshBundle& mb, size_t material_idx);
 	uint64_t get_texture(MeshBundle& mb, size_t texture_idx);
 	Light get_light(size_t light_idx);

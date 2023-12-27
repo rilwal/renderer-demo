@@ -276,7 +276,6 @@ public:
 
 		glm::vec3 min = {}, max = {}; // AABB
 
-
 		// Now add the indices to the index buffer
 		m_index_buffer.extend(m->indices);
 
@@ -347,7 +346,6 @@ public:
 		m_main_shader->use();
 
 
-
 		uint32_t storage_blocks = 0;
 
 
@@ -364,27 +362,24 @@ public:
 		uint32_t base_instance = 0;
 
 		m_draw_query.each([&](flecs::entity e, const TransformComponent& transform, const Model& model) {
-			for (const auto& [mesh_handle, material_handle] : model.meshes) {
-				auto& mesh = m_entries[mesh_handle];
-				auto& material = m_materials[material_handle];
+			const auto& [mesh_handle, material_handle] = model.mesh;
+			auto& mesh = m_entries[mesh_handle];
+			auto& material = m_materials[material_handle];
 
-				if (!material.blend) {
-					//glm::mat4 mvp = (glm::mat4)transform * vp;
+			if (!material.blend) {
+				//glm::mat4 mvp = (glm::mat4)transform * vp;
 
-					//if (!test_aabb(mvp, mesh.aabb_min, mesh.aabb_max)) {
-					command_list.push_back({
-						mesh.num_vertices,
-						1,
-						mesh.first_idx,
-						mesh.base_vertex,
-						i++
-						});
+				command_list.push_back({
+					mesh.num_vertices,
+					1,
+					mesh.first_idx,
+					mesh.base_vertex,
+					i++
+				});
 
-					per_instance_data.push_back({ static_cast<uint32_t>(transform_buffer.get_index(e)), material_handle});
-					m_rendered_tri_count += mesh.num_vertices / 3;
-					//}
+				per_instance_data.push_back({ static_cast<uint32_t>(transform_buffer.get_index(e)), material_handle});
+				m_rendered_tri_count += mesh.num_vertices / 3;
 
-				}
 			}
 		});
 

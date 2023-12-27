@@ -106,12 +106,12 @@ struct Rotation {
 
 // A model will be a set of mesh, material pairs
 struct Model {
-    std::vector<std::pair<MeshHandle, MaterialHandle>> meshes;
+    std::pair<MeshHandle, MaterialHandle> mesh;
 
-    Model() : meshes() {};
+    Model() : mesh() {};
 
     Model(MeshHandle mesh_handle, MaterialHandle material_handle = default_material) {
-        meshes.push_back({ mesh_handle, material_handle });
+        mesh = { mesh_handle, material_handle };
     }
 };
 
