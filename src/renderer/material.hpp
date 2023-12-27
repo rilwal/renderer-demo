@@ -7,16 +7,19 @@
 #include "texture.hpp"
 
 struct Material {
+#pragma pack(push, 1)
 	struct MaterialSTD140 {
-		glm::vec3 diffuse_color; // 12 bytes
-		uint8_t _padding[4]; // 4 bytes padding
-		glm::vec2 metallic_roughness;
-		uint8_t _padding_2[8];
-		uint64_t diffuse_texture; // Stored as a vec2 in shader!
-		uint64_t normal_texture;
-		uint64_t metalic_roughness_texture;
-		uint64_t _padding_3;
+		glm::vec3 diffuse_color;			// 12 bytes	
+		float _padding;						// 4 bytes padding
+		glm::vec2 metallic_roughness;		// 8 bytes
+		uint64_t diffuse_texture;			// 8 bytes
+		uint64_t normal_texture;			// 8 bytes
+		uint64_t metalic_roughness_texture;	// 8 bytes
+		uint64_t emissive_texture;			// 8 bytes
+		float _padding2[2];					// 8 bytes
 	};
+#pragma pack(pop)
+
 
 	MaterialSTD140 std140() const {
 		return { 

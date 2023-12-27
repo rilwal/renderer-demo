@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 /*
 TODO: Renderer
@@ -135,6 +135,8 @@ struct GPUResident {
 	bool is_dirty; // This should be set if any data has been modified that requires a re-upload
 };
 
+struct Dirty {}; // Tag struct for dirty bois
+
 
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
@@ -149,11 +151,18 @@ public:
 	};
 #pragma pack(pop)
 
+	using GPUResidentLight = flecs::pair<GPUResident, Light>;
 
 
 	MeshBundle()
 		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1),
-		m_command_buffer(), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")) {
+		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")),
+		m_light_buffer(BufferUsage::STATIC), material_buffer(BufferUsage::STATIC)
+#ifdef DEBUG
+		, m_debug_command_buffer(BufferUsage::STREAM), m_debug_per_idx_buffer(m_vertex_array, 1)
+#endif
+
+	{
 
 
 		m_vertex_buffer.set_layout({
@@ -169,19 +178,28 @@ public:
 		m_draw_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Model>()
 			.build();
 
-		m_light_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Light>()
+		m_non_resident_light_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Light>()
+			.term<GPUResident, Light>().not_()
 			.build();
 
+		m_dirty_light_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Light, const flecs::pair<GPUResident, Light>>().term<Dirty, Light>().build();
+
 		
-		// Any changes to GPU resident lights should cause the dirty bit to be set
-		ecs.observer<const TransformComponent, const Light, flecs::pair<GPUResident, Light>>().event(flecs::OnSet | flecs::OnAdd).each(
-			[](flecs::entity e, const TransformComponent t, const Light l, GPUResident& gpu_resident) {
-			gpu_resident.is_dirty = true;
+		// Any changes to GPU resident lights should cause them to be marked dirty
+		m_dirty_light_observer = ecs.observer<const flecs::pair<TransformComponent, World>, const Light>().term<GPUResident, Light>().event(flecs::OnSet).each(
+			[](flecs::entity e, const TransformComponent& t, const Light& l) {
+			e.add<Dirty, Light>();
 		});
 
 
 		Material def = { glm::vec3(0.8f) };
 		register_material(def);
+
+#ifdef DEBUG
+		m_debug_cube_handle = add_entry(construct_cube_mesh(1.f));
+		m_debug_mat = register_material({ .diffuse_color = {1.f, 0, 0} });
+		m_debug_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 4);
+#endif
 	}
 
 	~MeshBundle() {}
@@ -201,8 +219,6 @@ public:
 		uint32_t vertex_count = static_cast<uint32_t>(m->vertices.size());
 
 		glm::vec3 min = {}, max = {}; // AABB
-
-
 
 
 		// Now add the indices to the index buffer
@@ -257,8 +273,60 @@ public:
 		return index;
 	}
 
-	// TODO: take in a camera and generate vp
-	inline void render(flecs::world& ecs, const Camera& camera) {
+
+	inline void render_box(glm::vec3 top_left, glm::vec3 bottom_right, glm::mat4 model) {
+
+		Entry& e = m_entries[m_debug_cube_handle];
+
+		glDisable(GL_CULL_FACE);
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+		RenderCommand rc = { e.num_vertices, 1, e.first_idx, e.base_vertex, 0 };
+
+		m_debug_command_buffer.set_data(&rc, sizeof(RenderCommand));
+
+		PerInstanceData pid = { glm::scale(model, (bottom_right - top_left) / 2.f), m_debug_mat };
+		m_debug_per_idx_buffer.set_data(&pid, sizeof(PerInstanceData));
+
+		m_vertex_array.bind();
+		m_debug_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
+		m_vertex_buffer.bind(0);
+		m_debug_per_idx_buffer.bind(1);
+		m_index_buffer.bind();
+
+		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, 1, 0);
+
+		glEnable(GL_CULL_FACE);
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+	}
+
+
+	inline void update_lights() {
+		ecs.defer_begin();
+		m_non_resident_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light) {
+			// TODO: Check for locality etc. and don't make resident all lights all the time
+			//			(or do, lights are small maybe??)
+			//			(or don't, cache locality is worse with many lights???)
+			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+			size_t addr = m_light_buffer.push_back(light.STD140(world_pos));
+			e.set<GPUResident, Light>({ addr, false });
+		});
+		ecs.defer_end();
+
+
+		ecs.defer_begin();
+		m_dirty_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light, const GPUResident& resident ) {
+			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+			m_light_buffer.set_subdata(light.STD140(world_pos), resident.addr);
+
+			e.remove<Dirty, Light>();
+		});
+		ecs.defer_end();
+	}
+
+
+	inline void render(const Camera& camera) {
 		std::vector<RenderCommand> command_list;
 		std::vector<PerInstanceData> per_instance_data; // interleave mvp, model etc..
 
@@ -266,60 +334,68 @@ public:
 
 		m_rendered_tri_count = 0;
 
+		update_lights();
+
+		m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
+		m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
+		m_main_shader->use();
+
+
+		uint32_t storage_blocks = 0;
+
+		uint32_t material_storage_block_index = glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Materials");
+		int32_t material_storage_block_location = storage_blocks++;
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, material_storage_block_location, material_buffer.get_id());
+		glShaderStorageBlockBinding(m_main_shader->get_id(), material_storage_block_index, material_storage_block_location);
+
+
+		uint32_t light_storage_block_index = glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Lights");
+		int32_t light_storage_block_location = storage_blocks++;
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, light_storage_block_location, m_light_buffer.get_id());
+		glShaderStorageBlockBinding(m_main_shader->get_id(), light_storage_block_index, light_storage_block_location);
+
+
 		uint32_t i = 0; // For instance count
 
 		uint32_t base_instance = 0;
 
 		m_draw_query.each([&](flecs::entity e, const TransformComponent& transform, const Model& model) {
-			
-
 			for (const auto& [mesh_handle, material_handle] : model.meshes) {
 				auto& mesh = m_entries[mesh_handle];
 				auto& material = m_materials[material_handle];
 
 				if (!material.blend) {
-					glm::mat4 mvp = (glm::mat4)transform * vp;
+					//glm::mat4 mvp = (glm::mat4)transform * vp;
 
 					//if (!test_aabb(mvp, mesh.aabb_min, mesh.aabb_max)) {
-						command_list.push_back({
-							mesh.num_vertices,
-							1,
-							mesh.first_idx,
-							mesh.base_vertex,
-							i++
+					command_list.push_back({
+						mesh.num_vertices,
+						1,
+						mesh.first_idx,
+						mesh.base_vertex,
+						i++
 						});
 
-						per_instance_data.push_back({ transform, material_handle });
-						m_rendered_tri_count += mesh.num_vertices / 3;
+					per_instance_data.push_back({ transform, material_handle });
+					m_rendered_tri_count += mesh.num_vertices / 3;
 					//}
 
 				}
 			}
 		});
+
 		
+		m_command_buffer.set_data(command_list);
+		m_per_idx_buffer.set_data(per_instance_data);		
 
-		ecs.defer_begin();
-		m_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light) {
-			if (e.has<GPUResident, Light>()) {
-				GPUResident& resident = *e.get_mut<GPUResident, Light>();
+		m_vertex_array.bind();
+		m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
+		m_vertex_buffer.bind(0);
+		m_per_idx_buffer.bind(1);
+		m_index_buffer.bind();
 
-				if (resident.is_dirty) {
-					glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
-					m_light_buffer.set_subdata(light.STD140(world_pos), resident.addr);
-				}
-			}
-			else {
-				// TODO: Check for locality etc. and don't make resident all lights all the time
-				//			(or do, lights are small maybe??)
-				//			(or don't, cache locality is worse with many lights???)
-				glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
-				size_t addr = m_light_buffer.push_back(light.STD140(world_pos));
-				e.set<GPUResident, Light>({ addr, false });
-
-			}
-		});
-		ecs.defer_end();
-
+		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
+		
 
 		static bool show_shader_config = true;
 
@@ -344,32 +420,6 @@ public:
 		if (show_shader_config) m_main_shader->show_imgui();
 
 		ImGui::End();
-
-
-		
-
-		m_command_buffer.set_data(command_list);
-		m_per_idx_buffer.set_data(per_instance_data);
-
-		uint32_t uniform_block_binding_index = glGetUniformBlockIndex(m_main_shader->get_id(), "Materials");
-		glBindBufferBase(GL_UNIFORM_BUFFER, 0, material_buffer.get_id());
-		glUniformBlockBinding(m_main_shader->get_id(), uniform_block_binding_index, 0);
-
-		uint32_t light_uniform_block_binding_index = glGetUniformBlockIndex(m_main_shader->get_id(), "Lights");
-		glBindBufferBase(GL_UNIFORM_BUFFER, 1, m_light_buffer.get_id());
-		glUniformBlockBinding(m_main_shader->get_id(), light_uniform_block_binding_index, 1);
-
-		m_vertex_array.bind();
-		m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
-		m_vertex_buffer.bind(0);
-		m_per_idx_buffer.bind(1);
-		m_index_buffer.bind();
-		
-		m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-		m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-		m_main_shader->use();
-		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
-		
 
 		GL_ERROR_CHECK()
 	}
@@ -404,21 +454,34 @@ private:
 	std::vector<Entry> m_entries = {};
 	std::vector<Material> m_materials = {};
 	
-
 	VertexArray m_vertex_array;
 
 	VertexBuffer m_vertex_buffer;
 	VertexBuffer m_per_idx_buffer;
 
+	Buffer m_per_instance_ssb;
 	Buffer m_command_buffer;
 	Buffer material_buffer;
 	Buffer m_light_buffer;
+	Buffer m_positions_buffer;
 
 	IndexBuffer m_index_buffer;
 
 	flecs::query<const flecs::pair<TransformComponent, World>, const Model> m_draw_query;
-	flecs::query<const flecs::pair<TransformComponent, World>, const Light> m_light_query;
+	flecs::query<const flecs::pair<TransformComponent, World>, const Light> m_non_resident_light_query;
+	flecs::query<const flecs::pair<TransformComponent, World>, const Light, const flecs::pair<GPUResident, Light>> m_dirty_light_query;
 
+	// sets 
+	flecs::observer m_dirty_light_observer;
 
 	Ref<Shader> m_main_shader;
+
+
+	// Stuff for debug drawing
+#ifdef DEBUG 
+	MeshHandle m_debug_cube_handle;
+	MaterialHandle m_debug_mat;
+	Buffer m_debug_command_buffer;
+	VertexBuffer m_debug_per_idx_buffer;
+#endif
 };

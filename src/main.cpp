@@ -138,7 +138,7 @@ void entity_inspector_iterate(flecs::entity e) {
 
 
 
-void EditTransform(const Camera& camera, glm::mat4& matrix)
+bool EditTransform(const Camera& camera, glm::mat4& matrix)
 {
     static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::ROTATE);
     static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
@@ -176,7 +176,7 @@ void EditTransform(const Camera& camera, glm::mat4& matrix)
     ImGuiIO& io = ImGui::GetIO();
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
     glm::mat4 view = camera.view();
-    ImGuizmo::Manipulate(&view[0][0], &camera.projection[0][0], mCurrentGizmoOperation, mCurrentGizmoMode, &matrix[0][0], nullptr, nullptr);
+    return ImGuizmo::Manipulate(&view[0][0], &camera.projection[0][0], mCurrentGizmoOperation, mCurrentGizmoMode, &matrix[0][0], nullptr, nullptr);
 }
 
 
@@ -192,7 +192,11 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
 
     if (ImGui::Begin("Entity Inspector")) {
         if (selected_entity.is_alive()) {
-            EditTransform(camera, selected_entity.get_mut<TransformComponent, World>()->transform);
+
+            ImGui::TextWrapped("%s", ecs_type_str(ecs.get_world(), selected_entity.type()));
+
+
+            if (EditTransform(camera, selected_entity.get_mut<TransformComponent, World>()->transform)) selected_entity.modified<TransformComponent, World>();
 
             if (selected_entity.has<Model>()) {
                 auto model = *selected_entity.get<Model>();
@@ -212,8 +216,9 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
             if (selected_entity.has<Light>()) {
                 auto& light = *selected_entity.get_mut<Light>();
 
-                ImGui::ColorPicker3("Color", &light.color[0]);
-                ImGui::DragFloat("Intesnsity", &light.intensity);
+                if (ImGui::ColorPicker3("Color", &light.color[0])) selected_entity.modified<Light>();
+                if(ImGui::DragFloat("Intesnsity", &light.intensity)) selected_entity.modified<Light>();
+
             }
         }
     }
@@ -242,9 +247,13 @@ int main() {
     );
 
 
-    ecs.observer<const Position, const Rotation, const Scale>().event(flecs::OnSet | flecs::OnAdd).each(
-        [](flecs::entity e, const Position p, const Rotation r, const Scale s) {
-            glm::mat4 local_transform = p.mat4() * r.mat4() * s.mat4();
+    ecs.observer().term<const Position>().or_().term<const Rotation>().or_().term<const Scale>().event(flecs::OnSet | flecs::OnAdd).each(
+        [](flecs::entity e) {
+            const glm::mat4 p = (e.has<Position>() ? *e.get<Position>() : Position()).mat4();
+            const glm::mat4 r = (e.has<Rotation>() ? *e.get<Rotation>() : Rotation()).mat4();
+            const glm::mat4 s = (e.has<Scale>() ? *e.get<Scale>() : Scale()).mat4();
+
+            glm::mat4 local_transform = p * r * s;
             e.set<TransformComponent, Local>({ local_transform });
         }
     );
@@ -388,7 +397,7 @@ int main() {
        
 
 
-        auto light = ecs.entity("Light")
+        auto light = ecs.entity("MainLight")
             .child_of(root_node)
             .add<Scale>()
             .add<Rotation>()
@@ -491,8 +500,7 @@ int main() {
             ImGui::End();
 
 
-            bundle.render(ecs, c);
-
+            bundle.render(c);
 
 
             renderer.end_frame();

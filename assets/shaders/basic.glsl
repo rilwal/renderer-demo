@@ -20,7 +20,6 @@ uniform float time;
 
 out flat uint material_idx_out;
 
-
 #step(0.001)
 #range(0, 1)
 uniform vec3 scale = vec3(1);
@@ -48,7 +47,6 @@ void main() {
 
 
 #type fragment
-
 #extension GL_ARB_gpu_shader_int64 : enable
 #extension GL_ARB_bindless_texture : enable
 
@@ -61,14 +59,13 @@ in vec3 vertex_normal;
 in vec2 vertex_uv;
 in mat3 TBN;
 
-// Textures:
-// [0] : diffuse
-// [1] : normal
-// [3] : metallic, roughness
 struct Material {
 	vec3 diffuse_color;
 	vec2 metallic_roughness;
-	u64vec2 textures[2]; 
+	uint64_t diffuse_texture;
+	uint64_t normal_texture;
+	uint64_t metallic_roughness_texture;
+	uint64_t emissive_texture;
 };
 
 struct Light {
@@ -77,10 +74,6 @@ struct Light {
 	float intensity;
 };
 
-uniform vec3 light_pos = { 3, 3, 3 };
-uniform float light_intensity = 10.0;
-#color
-uniform vec3 light_color = vec3(1, 1, 1);
 
 uniform vec3 camera_pos;
 
@@ -95,12 +88,20 @@ uniform float specular_strength = 0.5;
 
 const float PI = 3.141;
 
-layout(std140) uniform Lights {
-	Light lights[80];
+uniform bool use_normal_map = true;
+
+uniform bool render_normal_map = false;
+uniform bool render_metallic_roughness_map = false;
+uniform bool render_normals = false;
+
+uniform int num_lights = 40;
+
+layout(std430) restrict readonly buffer Lights {
+	Light lights[];
 };
 
-layout(std140) uniform Materials {
-	Material materials[1024];
+layout(std430) restrict readonly buffer Materials {
+	Material materials[];
 };
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0) {
@@ -141,55 +142,43 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
-uniform bool use_normal_map = true;
 
-uniform bool render_normal_map = false;
-uniform bool render_metallic_roughness_map = false;
-uniform bool render_normals = false;
-
-uniform int num_lights = 40;
 
 void main() {
-	vec3 light_color_bigger = light_color * light_intensity;
-
 	Material mat = materials[material_idx_out];
 
-	uint64_t diffuse_texture = mat.textures[0].x;
-	uint64_t normal_texture = mat.textures[0].y;
-	uint64_t metallic_roughness_texture = mat.textures[1].x;
-
 	if (render_normal_map) {
-		fragColour = texture(sampler2D(normal_texture), vertex_uv);
+		fragColour = texture(sampler2D(mat.normal_texture), vertex_uv);
 		return;
 	}
 
 	vec3 albedo = materials[material_idx_out].diffuse_color;
 
-	if (diffuse_texture != 0) {
-		albedo *= texture(sampler2D(diffuse_texture), vertex_uv).rgb;
+	if (mat.diffuse_texture != 0) {
+		albedo *= texture(sampler2D(mat.diffuse_texture), vertex_uv).rgb;
 	} 
 
 	vec3 N = normalize(vertex_normal);
 
 	if (use_normal_map) {
-		if (normal_texture != 0) {
-			N = texture(sampler2D(normal_texture), vertex_uv).rgb;
+		if (mat.normal_texture != 0) {
+			N = texture(sampler2D(mat.normal_texture), vertex_uv).rgb;
 			N = N * 2.0 - 1.0;
 			N = normalize(TBN * N);
 		}
 	}
 
 	if (render_normals) {
-		fragColour = vec4((N + glm::vec3(1)) / 2, 1.0);
+		fragColour = vec4((N + vec3(1)) / 2, 1.0);
 		return;
 	}
 
 	float metallic = mat.metallic_roughness.x;
 	float roughness = mat.metallic_roughness.y;
 
-	if (metallic_roughness_texture != 0) {
-		metallic *= texture(sampler2D(metallic_roughness_texture), vertex_uv).b;
-		roughness *= texture(sampler2D(metallic_roughness_texture), vertex_uv).g;
+	if (mat.metallic_roughness_texture != 0) {
+		metallic *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).b;
+		roughness *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).g;
 	}
 
 	vec3 F0 = vec3(0.04); // approximation of F0 for dielectrics
@@ -199,7 +188,7 @@ void main() {
 
 	vec3 lo = vec3(0);
 
-	for (int i = 0; i < num_lights; i++) {
+	for (int i = 0; i < lights.length(); i++) {
 		Light l = lights[i];
 
 		vec3 L = normalize(l.position - vertex_position_worldspace);
@@ -232,7 +221,7 @@ void main() {
 	}
 	
 
-	vec3 ambient = vec3(0.02) * albedo;
+	vec3 ambient = vec3(0.05) * albedo;
 	vec3 color = ambient + lo;
 
 	color = color / (color + vec3(1.0));
