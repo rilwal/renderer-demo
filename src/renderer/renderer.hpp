@@ -132,10 +132,95 @@ inline bool test_aabb(glm::mat4 mvp, glm::vec3 min, glm::vec3 max) {
 // We will use it for materials, lights and models
 struct GPUResident {
 	size_t addr; // This is probably an offset into a buffer, but usage depends on the object
-	bool is_dirty; // This should be set if any data has been modified that requires a re-upload
 };
 
 struct Dirty {}; // Tag struct for dirty bois
+
+
+
+// A buffer that keeps data in sync between the GPU and the ECS
+template <typename Entity_Type, typename GPU_Type>
+class ECSGPUBuffer {
+public:
+	// TODO: Investigate STATIC vs STREAM for this kind of data
+	ECSGPUBuffer(std::function<GPU_Type(const flecs::entity&, const Entity_Type&)> convert) : m_buffer(BufferUsage::STATIC), m_convert(convert) {
+		m_non_resident_query = ecs.query_builder<const WorldTransform, const Entity_Type>()
+			.term<GPUResident, Entity_Type>().not_()
+			.build();
+
+		m_dirty_query = ecs.query_builder<const WorldTransform, const Entity_Type, const flecs::pair<GPUResident, Entity_Type>>().term<Dirty, Entity_Type>().build();
+
+		// Any changes to GPU resident lights should cause them to be marked dirty
+		m_observer = ecs.observer<const WorldTransform, const Entity_Type>().term<GPUResident, Entity_Type>().event(flecs::OnSet).each(
+			[](flecs::entity e, const TransformComponent&, const Entity_Type&) {
+				e.add<Dirty, Entity_Type>();
+			});
+	}
+
+	~ECSGPUBuffer() {
+		m_observer.destruct();
+	}
+
+	// Update the buffer!
+	void update() {
+		ecs.defer_begin();
+		m_non_resident_query.each([&](flecs::entity e, const TransformComponent& transform, const Entity_Type& value) {
+			// TODO: Check for locality etc. and don't make resident all lights all the time
+			//			(or do, lights are small maybe??)
+			//			(or don't, cache locality is worse with many lights???)
+			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+			size_t addr = m_buffer.push_back(m_convert(e, value));
+			e.set<GPUResident, Entity_Type>({ addr });
+		});
+		ecs.defer_end();
+
+
+		ecs.defer_begin();
+		m_dirty_query.each([&](flecs::entity e, const TransformComponent& transform, const Entity_Type& value, const GPUResident& resident) {
+			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+			m_buffer.set_subdata(m_convert(e, value), resident.addr);
+
+			e.remove<Dirty, Entity_Type>();
+		});
+		ecs.defer_end();
+	}
+
+
+	size_t get_address(flecs::entity e) {
+		return e.has<GPUResident, Entity_Type>() ? e.get<GPUResident, Entity_Type>()->addr : 0;
+	}
+
+	size_t get_index(flecs::entity e) {
+		return get_address(e) / sizeof(GPU_Type);
+	}
+
+
+	void bind(Ref<Shader> s, std::string name, int32_t storage_block_location) {
+		uint32_t storage_block_index = glGetProgramResourceIndex(s->get_id(), GL_SHADER_STORAGE_BLOCK, name.c_str());
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, storage_block_location, m_buffer.get_id());
+		glShaderStorageBlockBinding(s->get_id(), storage_block_index, storage_block_location);
+	}
+
+
+private:
+	std::function<GPU_Type(const flecs::entity&, const Entity_Type&)> m_convert; // convert to GPU Type
+	Buffer m_buffer;
+	flecs::query<const WorldTransform, const Entity_Type> m_non_resident_query;
+	flecs::query<const WorldTransform, const Entity_Type, const flecs::pair<GPUResident, Entity_Type>> m_dirty_query;
+	flecs::observer m_observer;
+};
+
+
+
+inline Light::Light_STD140 light_convert(const flecs::entity& e, const Light& light) {
+	TransformComponent transform = *e.get<WorldTransform>();
+	glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
+	return light.STD140(world_pos);
+}
+
+inline glm::mat4 transform_convert(const flecs::entity& e, const TransformComponent& transform) {
+	return transform;	
+}
 
 
 // This represents a number of meshes in a single vertex buffer.
@@ -146,25 +231,16 @@ class MeshBundle {
 public:
 #pragma pack(push, 1)
 	struct PerInstanceData {
-		glm::mat4 model;
+		uint32_t model_idx;
 		uint32_t material_idx;
 	};
 #pragma pack(pop)
 
-	using GPUResidentLight = flecs::pair<GPUResident, Light>;
-
-
 	MeshBundle()
 		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1),
-		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")),
-		m_light_buffer(BufferUsage::STATIC), material_buffer(BufferUsage::STATIC)
-#ifdef DEBUG
-		, m_debug_command_buffer(BufferUsage::STREAM), m_debug_per_idx_buffer(m_vertex_array, 1)
-#endif
-
+		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")), material_buffer(BufferUsage::STATIC),
+		lights_buffer(light_convert), transform_buffer(transform_convert)
 	{
-
-
 		m_vertex_buffer.set_layout({
 			{"position", ShaderDataType::Vec3 },
 			{"normal", ShaderDataType::Vec3},
@@ -172,34 +248,14 @@ public:
 			{"tangent", ShaderDataType::Vec3}
 		});
 
-		m_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 4);
+		m_per_idx_buffer.set_layout({ { "ModelIDX", ShaderDataType::U32 }, {"MaterialIDX", ShaderDataType::U32} }, 4);
 		m_per_idx_buffer.set_per_instance(true);
 
-		m_draw_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Model>()
+		m_draw_query = ecs.query_builder<const WorldTransform, const Model>()
 			.build();
-
-		m_non_resident_light_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Light>()
-			.term<GPUResident, Light>().not_()
-			.build();
-
-		m_dirty_light_query = ecs.query_builder<const flecs::pair<TransformComponent, World>, const Light, const flecs::pair<GPUResident, Light>>().term<Dirty, Light>().build();
-
-		
-		// Any changes to GPU resident lights should cause them to be marked dirty
-		m_dirty_light_observer = ecs.observer<const flecs::pair<TransformComponent, World>, const Light>().term<GPUResident, Light>().event(flecs::OnSet).each(
-			[](flecs::entity e, const TransformComponent& t, const Light& l) {
-			e.add<Dirty, Light>();
-		});
-
 
 		Material def = { glm::vec3(0.8f) };
 		register_material(def);
-
-#ifdef DEBUG
-		m_debug_cube_handle = add_entry(construct_cube_mesh(1.f));
-		m_debug_mat = register_material({ .diffuse_color = {1.f, 0, 0} });
-		m_debug_per_idx_buffer.set_layout({ { "Model", ShaderDataType::Mat4 }, {"Material", ShaderDataType::U32} }, 4);
-#endif
 	}
 
 	~MeshBundle() {}
@@ -274,57 +330,6 @@ public:
 	}
 
 
-	inline void render_box(glm::vec3 top_left, glm::vec3 bottom_right, glm::mat4 model) {
-
-		Entry& e = m_entries[m_debug_cube_handle];
-
-		glDisable(GL_CULL_FACE);
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-		RenderCommand rc = { e.num_vertices, 1, e.first_idx, e.base_vertex, 0 };
-
-		m_debug_command_buffer.set_data(&rc, sizeof(RenderCommand));
-
-		PerInstanceData pid = { glm::scale(model, (bottom_right - top_left) / 2.f), m_debug_mat };
-		m_debug_per_idx_buffer.set_data(&pid, sizeof(PerInstanceData));
-
-		m_vertex_array.bind();
-		m_debug_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
-		m_vertex_buffer.bind(0);
-		m_debug_per_idx_buffer.bind(1);
-		m_index_buffer.bind();
-
-		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, 1, 0);
-
-		glEnable(GL_CULL_FACE);
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-	}
-
-
-	inline void update_lights() {
-		ecs.defer_begin();
-		m_non_resident_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light) {
-			// TODO: Check for locality etc. and don't make resident all lights all the time
-			//			(or do, lights are small maybe??)
-			//			(or don't, cache locality is worse with many lights???)
-			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
-			size_t addr = m_light_buffer.push_back(light.STD140(world_pos));
-			e.set<GPUResident, Light>({ addr, false });
-		});
-		ecs.defer_end();
-
-
-		ecs.defer_begin();
-		m_dirty_light_query.each([&](flecs::entity e, const TransformComponent& transform, const Light& light, const GPUResident& resident ) {
-			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
-			m_light_buffer.set_subdata(light.STD140(world_pos), resident.addr);
-
-			e.remove<Dirty, Light>();
-		});
-		ecs.defer_end();
-	}
-
 
 	inline void render(const Camera& camera) {
 		std::vector<RenderCommand> command_list;
@@ -334,26 +339,25 @@ public:
 
 		m_rendered_tri_count = 0;
 
-		update_lights();
+		lights_buffer.update();
+		transform_buffer.update();
 
 		m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
 		m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
 		m_main_shader->use();
 
 
+
 		uint32_t storage_blocks = 0;
+
 
 		uint32_t material_storage_block_index = glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Materials");
 		int32_t material_storage_block_location = storage_blocks++;
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, material_storage_block_location, material_buffer.get_id());
 		glShaderStorageBlockBinding(m_main_shader->get_id(), material_storage_block_index, material_storage_block_location);
 
-
-		uint32_t light_storage_block_index = glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Lights");
-		int32_t light_storage_block_location = storage_blocks++;
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, light_storage_block_location, m_light_buffer.get_id());
-		glShaderStorageBlockBinding(m_main_shader->get_id(), light_storage_block_index, light_storage_block_location);
-
+		lights_buffer.bind(m_main_shader, "Lights", storage_blocks++);
+		transform_buffer.bind(m_main_shader, "Transforms", storage_blocks++);
 
 		uint32_t i = 0; // For instance count
 
@@ -376,7 +380,7 @@ public:
 						i++
 						});
 
-					per_instance_data.push_back({ transform, material_handle });
+					per_instance_data.push_back({ static_cast<uint32_t>(transform_buffer.get_index(e)), material_handle});
 					m_rendered_tri_count += mesh.num_vertices / 3;
 					//}
 
@@ -445,7 +449,6 @@ private:
 	uint32_t m_mesh_count = 0;
 	uint32_t m_material_count = 0;
 
-
 	uint64_t m_rendered_tri_count = 0;
 
 	uint32_t cumulative_idx_count = 0; // the cumulative idx count until now
@@ -462,26 +465,14 @@ private:
 	Buffer m_per_instance_ssb;
 	Buffer m_command_buffer;
 	Buffer material_buffer;
-	Buffer m_light_buffer;
-	Buffer m_positions_buffer;
 
 	IndexBuffer m_index_buffer;
 
-	flecs::query<const flecs::pair<TransformComponent, World>, const Model> m_draw_query;
-	flecs::query<const flecs::pair<TransformComponent, World>, const Light> m_non_resident_light_query;
-	flecs::query<const flecs::pair<TransformComponent, World>, const Light, const flecs::pair<GPUResident, Light>> m_dirty_light_query;
+	flecs::query<const WorldTransform, const Model> m_draw_query;
 
-	// sets 
-	flecs::observer m_dirty_light_observer;
+	ECSGPUBuffer<Light, Light::Light_STD140> lights_buffer; 
+	ECSGPUBuffer<WorldTransform, glm::mat4> transform_buffer;
 
 	Ref<Shader> m_main_shader;
 
-
-	// Stuff for debug drawing
-#ifdef DEBUG 
-	MeshHandle m_debug_cube_handle;
-	MaterialHandle m_debug_mat;
-	Buffer m_debug_command_buffer;
-	VertexBuffer m_debug_per_idx_buffer;
-#endif
 };

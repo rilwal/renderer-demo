@@ -41,6 +41,9 @@ struct TransformComponent {
     }
 };
 
+using WorldTransform = flecs::pair<TransformComponent, World>;
+using LocalTransform = flecs::pair<TransformComponent, Local>;
+
 struct Position {
     glm::vec3 position;
 

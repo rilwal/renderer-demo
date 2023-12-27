@@ -142,6 +142,7 @@ bool EditTransform(const Camera& camera, glm::mat4& matrix)
 {
     static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::ROTATE);
     static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
+    
     if (ImGui::IsKeyPressed(ImGuiKey_Z))
         mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
     if (ImGui::IsKeyPressed(ImGuiKey_X))
@@ -195,8 +196,11 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
 
             ImGui::TextWrapped("%s", ecs_type_str(ecs.get_world(), selected_entity.type()));
 
+            static bool local = false;
 
-            if (EditTransform(camera, selected_entity.get_mut<TransformComponent, World>()->transform)) selected_entity.modified<TransformComponent, World>();
+            if (EditTransform(camera, selected_entity.get_mut<TransformComponent, World>()->transform)) {
+                selected_entity.modified<TransformComponent, World>();
+            }
 
             if (selected_entity.has<Model>()) {
                 auto model = *selected_entity.get<Model>();
@@ -232,19 +236,29 @@ int main() {
     ecs = flecs::world();
 
 
-    ecs.observer<const flecs::pair<TransformComponent, Local>>().event(flecs::OnSet | flecs::OnAdd).each(
-        [](flecs::entity e, const TransformComponent& T) {
+    ecs.observer<const LocalTransform>().event(flecs::OnSet | flecs::OnAdd).each(
+        [](flecs::entity e, const TransformComponent& t) {
             // If any of these components are changed, let's update the translation matrices for all the children!!
             auto parent = e.parent();
             glm::mat4 parent_transform = glm::mat4(1);
 
-            if (parent && parent.has<TransformComponent, World>()) {
-                parent_transform = *parent.get<TransformComponent, World>();
+            if (parent && parent.has<WorldTransform>()) {
+                parent_transform = *parent.get<WorldTransform>();
             }
 
-            update_tree_transforms(e, parent_transform);
+            e.set<TransformComponent, World>(TransformComponent(parent_transform * t.transform));
         }
     );
+
+    ecs.observer <const WorldTransform>().event(flecs::OnSet | flecs::OnAdd).each(
+        [](flecs::entity e, const TransformComponent& t) {
+            e.children([&](flecs::entity child) {
+                update_tree_transforms(child, t);
+            });
+        }
+    );
+
+
 
 
     ecs.observer().term<const Position>().or_().term<const Rotation>().or_().term<const Scale>().event(flecs::OnSet | flecs::OnAdd).each(
