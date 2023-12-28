@@ -65,29 +65,36 @@ public:
 
 
 	// This will clear the buffer, and reallocate it to 1K
-	void clear() {
-		glBufferData(m_gl_id, 1024, nullptr, m_usage);
+	void clear(size_t size=1024) {
+		glDeleteBuffers(1, &m_gl_id);
+		m_gl_id = 0;
+		glCreateBuffers(1, &m_gl_id);
+		glNamedBufferData(m_gl_id, size, nullptr, m_usage);
+		m_reserved_size = size;
 	}
 
 
 	void resize(size_t size) {
-		std::cerr << "Resize buffer " << m_gl_id << ": " << m_reserved_size << " -> " << size << "\n";
-		if (m_size != 0) {
-			// We need to make a copy if we already have some data
-			uint32_t new_buffer = 0;
-			glCreateBuffers(1, &new_buffer);
-			glNamedBufferData(new_buffer, size, 0, m_usage);
-			glCopyNamedBufferSubData(m_gl_id, new_buffer, 0, 0, m_size);
-			glDeleteBuffers(1, &m_gl_id);
-			m_gl_id = new_buffer;
-		}
-		else {
-			//Otherwise, just set the size
-			glNamedBufferData(m_gl_id, size, 0, m_usage);
-			GL_ERROR_CHECK();
-		}
+		if (m_reserved_size < size) {
+			std::cerr << "Resize buffer " << m_gl_id << ": " << m_reserved_size << " -> " << size << "\n";
 
-		m_reserved_size = size;
+			if (m_size != 0) {
+				// We need to make a copy if we already have some data
+				uint32_t new_buffer = 0;
+				glCreateBuffers(1, &new_buffer);
+				glNamedBufferData(new_buffer, size, 0, m_usage);
+				glCopyNamedBufferSubData(m_gl_id, new_buffer, 0, 0, m_size);
+				glDeleteBuffers(1, &m_gl_id);
+				m_gl_id = new_buffer;
+			}
+			else {
+				//Otherwise, just set the size
+				glNamedBufferData(m_gl_id, size, 0, m_usage);
+				GL_ERROR_CHECK();
+			}
+
+			m_reserved_size = size;
+		}
 	}
 
 	void set_data(const void* data, size_t size) {
@@ -145,6 +152,7 @@ public:
 	size_t push_back(const T& element) {
 		size_t offset = m_size;
 		set_subdata(&element, offset, sizeof(T));
+		if (offset >= std::numeric_limits<uint32_t>::max()) fprintf(stderr, "Buffer index too high?\n");
 		return offset;
 	}
 

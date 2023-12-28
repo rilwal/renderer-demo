@@ -614,6 +614,15 @@ void Shader::show_imgui() {
 	}
 }
 
+
+void Shader::bind_ssbo(std::string name, size_t storage_block_location, Buffer& buffer) {
+	uint32_t storage_block_index = glGetProgramResourceIndex(get_id(), GL_SHADER_STORAGE_BLOCK, name.c_str());
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, storage_block_location, buffer.get_id());
+	glShaderStorageBlockBinding(get_id(), storage_block_index, storage_block_location);
+
+}
+
+
 void Shader::unload() {
 	uniforms.clear();
 	glDeleteProgram(gl_id);

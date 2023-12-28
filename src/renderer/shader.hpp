@@ -165,6 +165,8 @@ public:
 	void show_imgui();
 
 
+	void bind_ssbo(std::string name, size_t index, Buffer& buffer);
+
 	inline uint32_t get_id() { return gl_id; }
 
 	std::map<std::string, Uniform> uniforms;

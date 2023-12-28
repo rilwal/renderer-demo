@@ -101,7 +101,7 @@ static flecs::entity selected_entity;
 
 
 void entity_inspector_iterate(flecs::entity e) {
-    if (ImGui::TreeNodeEx((void*)e.id(), ImGuiTreeNodeFlags_DefaultOpen | (e == selected_entity ? ImGuiTreeNodeFlags_Selected : 0), e.name().c_str())) {
+    if (ImGui::TreeNodeEx((void*)e.id(), (e == selected_entity ? ImGuiTreeNodeFlags_Selected : 0), e.name().c_str())) {
         
         if (ImGui::IsItemClicked()) {
             selected_entity = e;
@@ -121,16 +121,11 @@ void entity_inspector_iterate(flecs::entity e) {
             //.order_by(flecs::Name, name_order )
             .build();
 
-        filter.each([&](flecs::entity child) {
+        e.children([&](flecs::entity child) {
             entity_inspector_iterate(child);
 
             });
 
-
-        
-
-        e.children([&](flecs::entity child) {
-            });
         ImGui::TreePop();
     }
 
@@ -279,8 +274,13 @@ int main() {
     Renderer renderer;
     renderer.initialize();
     {    
+        auto gpu_driven_shader = asset_manager.GetByPath<Shader>("assets/shaders/gpu_driven.glsl");
 
-        
+        auto clear_render_buffer_shader = asset_manager.GetByPath<Shader>("assets/shaders/clear_render_data_buffer.glsl");
+        auto entity_count_shader = asset_manager.GetByPath<Shader>("assets/shaders/entity_count.glsl");
+        auto build_render_comand = asset_manager.GetByPath<Shader>("assets/shaders/build_render_command.glsl");
+        auto generate_per_instance_data = asset_manager.GetByPath<Shader>("assets/shaders/generate_per_instance_data.glsl");
+
 
         bool running = true;
 
@@ -301,10 +301,12 @@ int main() {
 
         set_entity_transform(boombox_holder);
 
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
+        constexpr int num_boomboxes_1d = 50;
+
+        for (int i = 0; i < num_boomboxes_1d; i++) {
+            for (int j = 0; j < num_boomboxes_1d; j++) {
                 auto n = ecs.entity(std::format("Boombox {} {}", i, j).c_str()).is_a(boombox)
-                    .set<Position>(glm::vec3{ i - 5, -5, j - 5 })
+                    .set<Position>(glm::vec3{ (i*2) - num_boomboxes_1d, -5, (j*2) - num_boomboxes_1d })
                     .child_of(boombox_holder);
                     
             }
@@ -424,13 +426,15 @@ int main() {
             .set<Position>({})
             .child_of(root_node);
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 40; i++) {
             auto e = ecs.entity(std::format("Light {}", i).c_str())
                 .child_of(lights)
                 .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
 
             set_entity_transform(e, random_vec3(-10, 10));
         }
+
+        bundle.add_entry(construct_cube_mesh(2));
 
 
         while (!glfwWindowShouldClose(renderer.get_platform_window())) {

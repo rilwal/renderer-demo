@@ -18,7 +18,6 @@ void Renderer::initialize() {
 	glfwInit();
 
 
-	glfwMakeContextCurrent(window);
 	gladLoadGL(glfwGetProcAddress);
 
 	glEnable(GL_DEPTH_TEST);
@@ -132,6 +131,8 @@ Window::Window(int width, int height, std::string title) {
 		glm::ivec2 window_size_i = glm::ivec2(w, h);
 	});
 
+	glfwMakeContextCurrent(platform_window);
+	//glfwSwapInterval(0);
 }
 
 Window::~Window() {
