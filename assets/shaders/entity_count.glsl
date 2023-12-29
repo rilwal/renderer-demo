@@ -2,8 +2,6 @@
 
 layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
-const uint MAX_MODELS = 100;
-
 struct Entity {
     uint mesh_idx;
     uint material_idx;
@@ -15,19 +13,24 @@ layout(std430) restrict readonly buffer Entities {
 	Entity entities[];
 };
 
-layout(std430) restrict writeonly buffer RenderData {
-    uint render_offset;
-    uint num_instances[MAX_MODELS];
-    uint model_data_start[MAX_MODELS];
+struct ModelInstanceData {
+    uint count;
+    uint first_instance;
 };
 
+layout(std430) restrict writeonly buffer RenderData {
+    uint render_offset;
+    ModelInstanceData instance_data[];
+};
+
+layout(location=0) uniform uint num_entities;
 
 void main() {    
 	uint global_id = gl_GlobalInvocationID.x;
     uint local_id = gl_LocalInvocationID.x;
 
-    if(global_id < entities.length()) {
+    if(global_id < num_entities) {
         Entity e = entities[global_id];
-        atomicAdd(num_instances[e.mesh_idx], 1);
+        atomicAdd(instance_data[e.mesh_idx].count, 1);
     }
 }

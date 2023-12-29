@@ -139,6 +139,11 @@ public:
 		GL_ERROR_CHECK();
 	}
 
+	void bind(uint32_t bind_point, uint32_t index) {
+		glBindBufferBase(bind_point, index, m_gl_id);
+		GL_ERROR_CHECK();
+	}
+
 	// Append some data to a buffer!
 	size_t extend(const void* data, size_t len) {
 		size_t offset = m_size;

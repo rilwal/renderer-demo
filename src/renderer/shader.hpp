@@ -89,7 +89,7 @@ struct Uniform {
 #undef UniformGetter
 
 
-#define UniformSetter(ct, dt, m) template<> void set<ct>(ct val) { changed = true; _data.m = val; }template<> void set_default<ct>(ct val) { _default.m = val; }
+#define UniformSetter(ct, dt, m) template<> void set<ct>(ct val) { if(_data.m != val) { changed = true; _data.m = val; } }template<> void set_default<ct>(ct val) { _default.m = val; }
 	UniformSetter(float, F32, f);
 	UniformSetter(double, F64, d);
 

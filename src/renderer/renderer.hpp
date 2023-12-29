@@ -201,6 +201,11 @@ public:
 	}
 
 
+	void bind(uint32_t bind_point, uint32_t index) {
+		m_buffer.bind(bind_point, index);
+	}
+
+
 private:
 	std::function<GPU_Type(const flecs::entity&, const Entity_Type&)> m_convert; // convert to GPU Type
 	Buffer m_buffer;
@@ -256,7 +261,11 @@ public:
 		uint32_t num_vertices;
 		uint32_t first_idx;
 		int32_t base_vertex;
-		uint32_t padding;
+		float padding_1;
+		glm::vec3 aabb_min;
+		float padding_2;
+		glm::vec3 aabb_max;
+		float padding_3;
 	};
 #pragma pack(pop)
 
@@ -293,6 +302,7 @@ public:
 
 		Material def = { glm::vec3(0.8f) };
 		register_material(def);
+
 	}
 
 	~MeshBundle() {}
@@ -357,7 +367,7 @@ public:
 
 		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max, index });
 
-		GPUMesh gpu_mesh = { index_count, cumulative_idx_count, cumulative_vertex_count };
+		GPUMesh gpu_mesh = { .num_vertices=index_count, .first_idx=cumulative_idx_count, .base_vertex=cumulative_vertex_count, .aabb_min=min, .aabb_max=max };
 		m_mesh_buffer.push_back(gpu_mesh);
 
 		cumulative_idx_count += index_count;
@@ -368,9 +378,38 @@ public:
 		return index;
 	}
 
+	inline void setup_shaders() {
+		// Binds all the buffers and uniforms for shaders
+		// TODO: figure out what to do if these buffer ids change!
+		m_render_intermediate_buffer.bind(GL_SHADER_STORAGE_BUFFER, 0);
+		m_entity_buffer.bind(GL_SHADER_STORAGE_BUFFER, 1);
+		m_mesh_buffer.bind(GL_SHADER_STORAGE_BUFFER, 2);
+		m_command_buffer.bind(GL_SHADER_STORAGE_BUFFER, 3);
+		material_buffer.bind(GL_SHADER_STORAGE_BUFFER, 4);
+		m_per_idx_buffer.Buffer::bind(GL_SHADER_STORAGE_BUFFER, 5);
+		lights_buffer.bind(GL_SHADER_STORAGE_BUFFER, 6);
+		m_transform_buffer.bind(GL_SHADER_STORAGE_BUFFER, 7);
+
+		glShaderStorageBlockBinding(m_entity_count_shader->get_id(), glGetProgramResourceIndex(m_entity_count_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
+		glShaderStorageBlockBinding(m_entity_count_shader->get_id(), glGetProgramResourceIndex(m_entity_count_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Entities"), 1);
+
+		glShaderStorageBlockBinding(m_build_render_command_shader->get_id(), glGetProgramResourceIndex(m_build_render_command_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
+		glShaderStorageBlockBinding(m_build_render_command_shader->get_id(), glGetProgramResourceIndex(m_build_render_command_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Meshes"), 2);
+		glShaderStorageBlockBinding(m_build_render_command_shader->get_id(), glGetProgramResourceIndex(m_build_render_command_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderCommands"), 3);
+
+		glShaderStorageBlockBinding(m_generate_per_instance_data_shader->get_id(), glGetProgramResourceIndex(m_generate_per_instance_data_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
+		glShaderStorageBlockBinding(m_generate_per_instance_data_shader->get_id(), glGetProgramResourceIndex(m_generate_per_instance_data_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Entities"), 1);
+		glShaderStorageBlockBinding(m_generate_per_instance_data_shader->get_id(), glGetProgramResourceIndex(m_generate_per_instance_data_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "PerInstance"), 5);
+
+		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Materials"), 4);
+		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Lights"), 6);
+		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Transforms"), 7);
+
+	}
 
 
 	inline void render(const Camera& camera) {
+		static int renderer = 0;
 		const glm::mat4 vp = camera.projection * camera.view();
 
 		lights_buffer.update();
@@ -388,6 +427,10 @@ public:
 				e.set<GPUResident, WorldTransform>({ idx });
 				});
 			ecs.defer_end();
+
+			// chance that buffer re-allocated
+			// todo: actually update only when required!
+			setup_shaders();
 		}
 
 		size_t dirty_transforms = m_dirty_transform_query.count();
@@ -401,6 +444,10 @@ public:
 				e.remove<Dirty, WorldTransform>();
 			});
 			ecs.defer_end();
+
+			// chance that buffer re-allocated
+			// todo: actually update only when required!
+			setup_shaders();
 		}
 
 		size_t non_resident_entities = m_non_resident_entity_query.count();
@@ -413,186 +460,131 @@ public:
 				const auto& [mesh_handle, material_handle] = model.mesh;
 				auto& mesh = m_entries[mesh_handle];
 				auto& material = m_materials[material_handle];
+				uint32_t idx = 0;
 
-				size_t address = m_entity_buffer.push_back(GPUEntity{
-					.mesh_idx = mesh.idx,
-					.material_idx = material_handle,
-					.transform_idx = static_cast<uint32_t>(transform.addr),
-					.padding = 12345
-				});
+				if (!material.blend) {
+					size_t address = m_entity_buffer.push_back(GPUEntity{
+						.mesh_idx = mesh.idx,
+						.material_idx = material_handle,
+						.transform_idx = static_cast<uint32_t>(transform.addr),
+						.padding = 12345
+						});
 
-				uint32_t idx = static_cast<uint32_t>(address / sizeof(GPUEntity));
-
+					idx = static_cast<uint32_t>(address / sizeof(GPUEntity));
+				}
 				e.set<GPUResident>({ idx });
 				});
 			ecs.defer_end();
+
+			// chance that buffer re-allocated
+			// todo: actually update only when required!
+			setup_shaders();
 		}
 
-		size_t draw_count = m_draw_query.count();
+		//setup_shaders();
+
+
+		if (renderer == 0) {
+			uint32_t draw_count = m_draw_query.count();
+
+
+			m_command_buffer.resize(sizeof(RenderCommand) * m_entries.size());
+			m_per_idx_buffer.resize(sizeof(PerInstanceData) * draw_count);
+
+			m_render_intermediate_buffer.resize((m_entries.size() * 2 + 1) * sizeof(uint32_t));
+			constexpr uint32_t zero = 0;
+			glClearNamedBufferData(m_render_intermediate_buffer.get_id(), GL_R32UI, GL_RED, GL_UNSIGNED_INT, &zero);
 
 
 
-		//auto gpu_driven_shader = asset_manager.GetByPath<Shader>("assets/shaders/gpu_driven.glsl");
-		//gpu_driven_shader->use();
+			m_entity_count_shader->uniforms["num_entities"].set<uint32_t>(draw_count);
+			m_entity_count_shader->use();
 
-		auto clear_render_buffer_shader = asset_manager.GetByPath<Shader>("assets/shaders/clear_render_data_buffer.glsl");
-		auto entity_count_shader = asset_manager.GetByPath<Shader>("assets/shaders/entity_count.glsl");
-		auto build_render_command = asset_manager.GetByPath<Shader>("assets/shaders/build_render_command.glsl");
-		auto generate_per_instance_data = asset_manager.GetByPath<Shader>("assets/shaders/generate_per_instance_data.glsl");
+			glDispatchCompute((draw_count + 32) / 32, 1, 1);
+			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+			m_build_render_command_shader->uniforms["num_models"].set<uint32_t>(m_entries.size());
+			m_build_render_command_shader->use();
 
-		m_command_buffer.resize(sizeof(RenderCommand) * m_entries.size());
-		m_per_idx_buffer.resize(sizeof(PerInstanceData) * (draw_count + 1024));
+			glDispatchCompute((m_entries.size() + 32) / 32, 1, 1);
+			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-		m_render_intermediate_buffer.resize(201 * sizeof(uint32_t));
-		m_render_intermediate_buffer.set_subdata<uint32_t>(0, 0);
-		//uint32_t zero = 0;
-		//glClearNamedBufferData(m_render_intermediate_buffer.get_id(), GL_RGB32UI, GL_UNSIGNED_INT, GL_UNSIGNED_INT, &zero);
-		
-		clear_render_buffer_shader->use();
-		clear_render_buffer_shader->bind_ssbo("RenderData", 0, m_render_intermediate_buffer);
+			m_generate_per_instance_data_shader->uniforms["num_entities"].set<uint32_t>(draw_count);
+			m_generate_per_instance_data_shader->use();
 
-		glDispatchCompute((100 + 32) / 32, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+			glDispatchCompute((draw_count + 32) / 32, 1, 1);
+			glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
+			m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
+			m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
+			m_main_shader->use();
 
-		entity_count_shader->use();
-		entity_count_shader->bind_ssbo("Entities", 0, m_entity_buffer);
-		entity_count_shader->bind_ssbo("RenderData", 1, m_render_intermediate_buffer);
+			m_vertex_array.bind();
+			m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
+			m_vertex_buffer.bind(0);
+			m_per_idx_buffer.bind(1);
+			m_index_buffer.bind();
 
-		glDispatchCompute((draw_count+32) / 32, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-		build_render_command->use();
-		build_render_command->bind_ssbo("Meshes", 0, m_mesh_buffer);
-		build_render_command->bind_ssbo("RenderCommands", 1, m_command_buffer);
-		build_render_command->bind_ssbo("RenderData", 2, m_render_intermediate_buffer);
-
-		glDispatchCompute((m_entries.size() +32) / 32, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
+		}
+		else {
+			std::vector<RenderCommand> command_list;
+			std::vector<PerInstanceData> per_instance_data; // interleave mvp, model etc..
 
 
-		generate_per_instance_data->use();
-		generate_per_instance_data->bind_ssbo("Entities", 0, m_entity_buffer);
-		generate_per_instance_data->bind_ssbo("PerInstance", 1, m_per_idx_buffer);
-		generate_per_instance_data->bind_ssbo("RenderData", 2, m_render_intermediate_buffer);
+			m_rendered_tri_count = 0;
 
-		glDispatchCompute((draw_count + 32) / 32, 1, 1);
-		//glMemoryBarrier(GL_ALL_BARRIER_BITS);
+			lights_buffer.update();
+			//transform_buffer.update();
 
-
-
-
-		/*
-		uint32_t storage_blocks = 0;
-
-		uint32_t entities_storage_block_index = glGetProgramResourceIndex(gpu_driven_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Entities");
-		int32_t entities_storage_block_location = storage_blocks++;
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, entities_storage_block_location, m_entity_buffer.get_id());
-		glShaderStorageBlockBinding(gpu_driven_shader->get_id(), entities_storage_block_index, entities_storage_block_location);
+			m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
+			m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
+			m_main_shader->use();
 
 
-		uint32_t mesh_storage_block_index = glGetProgramResourceIndex(gpu_driven_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Meshes");
-		int32_t mesh_storage_block_location = storage_blocks++;
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, mesh_storage_block_location, m_mesh_buffer.get_id());
-		glShaderStorageBlockBinding(gpu_driven_shader->get_id(), mesh_storage_block_index, mesh_storage_block_location);
+			m_main_shader->bind_ssbo("Materials", 0, material_buffer);
+			lights_buffer.bind(m_main_shader, "Lights", 1);
+			m_main_shader->bind_ssbo("Transforms", 2, m_transform_buffer);
 
 
-		uint32_t command_storage_block_index = glGetProgramResourceIndex(gpu_driven_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderCommands");
-		int32_t command_storage_block_location = storage_blocks++;
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, command_storage_block_location, m_command_buffer.get_id());
-		glShaderStorageBlockBinding(gpu_driven_shader->get_id(), command_storage_block_index, command_storage_block_location);
+			uint32_t i = 0; // For instance count
 
+			uint32_t base_instance = 0;
 
-		uint32_t pid_storage_block_index = glGetProgramResourceIndex(gpu_driven_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "PerInstance");
-		int32_t pid_storage_block_location = storage_blocks++;
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, pid_storage_block_location, m_per_idx_buffer.get_id());
-		glShaderStorageBlockBinding(gpu_driven_shader->get_id(), pid_storage_block_index, pid_storage_block_location);
+			m_draw_query.each([&](flecs::entity e, const GPUResident& transform, const Model& model) {
+				const auto& [mesh_handle, material_handle] = model.mesh;
+				auto& mesh = m_entries[mesh_handle];
+				auto& material = m_materials[material_handle];
 
-		glDispatchCompute(draw_count / 32, 1, 1);
-		glMemoryBarrier(GL_ALL_BARRIER_BITS);
-		*/
+				if (!material.blend) {
+					//glm::mat4 mvp = (glm::mat4)transform * vp;
 
-		m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-		m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-		m_main_shader->use();
+					command_list.push_back({
+						mesh.num_vertices,
+						1,
+						mesh.first_idx,
+						mesh.base_vertex,
+						i++
+					});
 
-		m_main_shader->bind_ssbo("Materials", 0, material_buffer);
-		lights_buffer.bind(m_main_shader, "Lights", 1);
-		m_main_shader->bind_ssbo("Transforms", 2,  m_transform_buffer);
+					per_instance_data.push_back({ static_cast<uint32_t>(transform.addr), material_handle });
+					m_rendered_tri_count += mesh.num_vertices / 3;
 
-		m_vertex_array.bind();
-		m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
-		m_vertex_buffer.bind(0);
-		m_per_idx_buffer.bind(1);
-		m_index_buffer.bind();
-
-		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
-
-#if FALSE
-		std::vector<RenderCommand> command_list;
-		std::vector<PerInstanceData> per_instance_data; // interleave mvp, model etc..
-
-		const glm::mat4 vp = camera.projection * camera.view();
-
-		m_rendered_tri_count = 0;
-
-		lights_buffer.update();
-		transform_buffer.update();
-
-		m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-		m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-		m_main_shader->use();
-
-
-		uint32_t storage_blocks = 0;
-
-
-		uint32_t material_storage_block_index = glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Materials");
-		int32_t material_storage_block_location = storage_blocks++;
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, material_storage_block_location, material_buffer.get_id());
-		glShaderStorageBlockBinding(m_main_shader->get_id(), material_storage_block_index, material_storage_block_location);
-
-		lights_buffer.bind(m_main_shader, "Lights", storage_blocks++);
-		transform_buffer.bind(m_main_shader, "Transforms", storage_blocks++);
-
-		uint32_t i = 0; // For instance count
-
-		uint32_t base_instance = 0;
-
-		m_draw_query.each([&](flecs::entity e, const TransformComponent& transform, const Model& model) {
-			const auto& [mesh_handle, material_handle] = model.mesh;
-			auto& mesh = m_entries[mesh_handle];
-			auto& material = m_materials[material_handle];
-
-			if (!material.blend) {
-				//glm::mat4 mvp = (glm::mat4)transform * vp;
-
-				command_list.push_back({
-					mesh.num_vertices,
-					1,
-					mesh.first_idx,
-					mesh.base_vertex,
-					i++
+				}
 				});
 
-				per_instance_data.push_back({ static_cast<uint32_t>(transform_buffer.get_index(e)), material_handle});
-				m_rendered_tri_count += mesh.num_vertices / 3;
 
-			}
-		});
+			m_command_buffer.set_data(command_list);
+			m_per_idx_buffer.set_data(per_instance_data);
 
-		
-		m_command_buffer.set_data(command_list);
-		m_per_idx_buffer.set_data(per_instance_data);		
+			m_vertex_array.bind();
+			m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
+			m_vertex_buffer.bind(0);
+			m_per_idx_buffer.bind(1);
+			m_index_buffer.bind();
 
-		m_vertex_array.bind();
-		m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
-		m_vertex_buffer.bind(0);
-		m_per_idx_buffer.bind(1);
-		m_index_buffer.bind();
-
-		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
+			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
+		}
 
 		static bool show_shader_config = true;
 
@@ -604,9 +596,11 @@ public:
 			glGetIntegerv(GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX, &total_memory);
 			glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &available_memory);
 
+			ImGui::SliderInt("Renderer", &renderer, 0, 1);
+
 
 			ImGui::LabelText("Number of triangles: ", "%llu", m_rendered_tri_count);
-			ImGui::LabelText("Number of  commands: ", "%llu", command_list.size());
+			//ImGui::LabelText("Number of  commands: ", "%llu", command_list.size());
 			ImGui::LabelText("Available video mem:", "%d / %d MB", available_memory / 1024, total_memory / 1024);
 
 			if (ImGui::Button("Show Shader Config")) {
@@ -617,7 +611,6 @@ public:
 		if (show_shader_config) m_main_shader->show_imgui();
 
 		ImGui::End();
-#endif
 
 		GL_ERROR_CHECK()
 	}
@@ -678,4 +671,7 @@ private:
 
 	Ref<Shader> m_main_shader;
 
+	Ref<Shader> m_entity_count_shader = asset_manager.GetByPath<Shader>("assets/shaders/entity_count.glsl");
+	Ref<Shader> m_build_render_command_shader = asset_manager.GetByPath<Shader>("assets/shaders/build_render_command.glsl");
+	Ref<Shader> m_generate_per_instance_data_shader = asset_manager.GetByPath<Shader>("assets/shaders/generate_per_instance_data.glsl");
 };

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <filesystem>
 #include <variant>
+#include <numbers>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -73,10 +74,12 @@ glm::vec3 random_vec3(float min, float max) {
 
 
 flecs::entity spawn_cube(MeshBundle& mb, Model model) {
+    Model m2 = model;
     auto cube_entity = ecs.entity();
+    m2.mesh.second = mb.register_material({ random_vec3(0, 1), glm::vec2(random_float(.1f, .9f), random_float(.1f, .9f)) });
 
     set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14f, 3.14f))), Scale(random_float(0.5f, 1.5f)));
-    cube_entity.set<Model>(model);
+    cube_entity.set<Model>(m2);
 
     return cube_entity;
 }
@@ -142,7 +145,7 @@ bool EditTransform(const Camera& camera, glm::mat4& matrix)
         mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
     if (ImGui::IsKeyPressed(ImGuiKey_X))
         mCurrentGizmoOperation = ImGuizmo::ROTATE;
-    if (ImGui::IsKeyPressed(ImGuiKey_C)) // r Key
+    if (ImGui::IsKeyPressed(ImGuiKey_C))
         mCurrentGizmoOperation = ImGuizmo::SCALE;
     if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
         mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
@@ -154,9 +157,9 @@ bool EditTransform(const Camera& camera, glm::mat4& matrix)
         mCurrentGizmoOperation = ImGuizmo::SCALE;
     float matrixTranslation[3], matrixRotation[3], matrixScale[3];
     ImGuizmo::DecomposeMatrixToComponents(&matrix[0][0], matrixTranslation, matrixRotation, matrixScale);
-    ImGui::InputFloat3("Tr", matrixTranslation);
-    ImGui::InputFloat3("Rt", matrixRotation);
-    ImGui::InputFloat3("Sc", matrixScale);
+    ImGui::DragFloat3("Tr", matrixTranslation);
+    ImGui::DragFloat3("Rt", matrixRotation);
+    ImGui::DragFloat3("Sc", matrixScale);
     ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, &matrix[0][0]);
 
     if (mCurrentGizmoOperation != ImGuizmo::SCALE)
@@ -276,7 +279,6 @@ int main() {
     {    
         auto gpu_driven_shader = asset_manager.GetByPath<Shader>("assets/shaders/gpu_driven.glsl");
 
-        auto clear_render_buffer_shader = asset_manager.GetByPath<Shader>("assets/shaders/clear_render_data_buffer.glsl");
         auto entity_count_shader = asset_manager.GetByPath<Shader>("assets/shaders/entity_count.glsl");
         auto build_render_comand = asset_manager.GetByPath<Shader>("assets/shaders/build_render_command.glsl");
         auto generate_per_instance_data = asset_manager.GetByPath<Shader>("assets/shaders/generate_per_instance_data.glsl");
@@ -294,30 +296,16 @@ int main() {
 
 
         auto boombox = load_gltf("assets/models/boombox.gltf", root_node, bundle);
-        boombox.lookup("BoomBox").set<Scale>(50);
+        boombox.lookup("BoomBox").set<Scale>(200);
 
-        auto boombox_holder = ecs.entity("Boomboxes!")
-            .child_of(root_node);
 
-        set_entity_transform(boombox_holder);
+#if 0
+        auto sponza = load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
 
-        constexpr int num_boomboxes_1d = 50;
-
-        for (int i = 0; i < num_boomboxes_1d; i++) {
-            for (int j = 0; j < num_boomboxes_1d; j++) {
-                auto n = ecs.entity(std::format("Boombox {} {}", i, j).c_str()).is_a(boombox)
-                    .set<Position>(glm::vec3{ (i*2) - num_boomboxes_1d, -5, (j*2) - num_boomboxes_1d })
-                    .child_of(boombox_holder);
-                    
-            }
-        }
-
-        //auto sponza = load_gltf("assets/models/sponza/NewSponza_Main_glTF_002.gltf", root_node, bundle);
-
-        //ecs.entity("My Sponza")
-        //    .child_of(root_node)
-        //    .is_a(sponza);
-
+        ecs.entity("My Sponza")
+            .child_of(root_node)
+            .is_a(sponza);
+#endif
         MeshHandle cube_mesh = bundle.add_entry(cube_1);
         MeshHandle sphere_mesh = bundle.add_entry(sphere);
         MeshHandle joker_mesh = bundle.add_entry(joker);
@@ -335,13 +323,13 @@ int main() {
         Camera c = {};
         c.position = { 10, 10, 10 };
         c.rotation = { -3.9, -0.6 };
-        c.projection = glm::perspective(45.0, 16.0 / 9.0, 0.01, 100.0);
+        c.projection = glm::perspective(45.0, 16.0 / 9.0, 0.01, 10000.0);
 
 
         std::chrono::high_resolution_clock clock = {};
 
-        float time = float(std::chrono::duration_cast<std::chrono::milliseconds>(clock.now().time_since_epoch()).count()) * 0.001f;
-        float last_time = time;
+        double time = float(std::chrono::duration_cast<std::chrono::milliseconds>(clock.now().time_since_epoch()).count()) * 0.001f;
+        double last_time = time;
 
         std::vector<float> times;
         times.resize(16);
@@ -353,6 +341,23 @@ int main() {
         constexpr bool test_scene = true;
 
         if (test_scene) {
+            auto boombox_holder = ecs.entity("Boomboxes!")
+                .child_of(root_node);
+
+            set_entity_transform(boombox_holder);
+
+            constexpr int num_boomboxes_1d = 50;
+
+            for (int i = 0; i < num_boomboxes_1d; i++) {
+                for (int j = 0; j < num_boomboxes_1d; j++) {
+                    auto n = ecs.entity(std::format("Boombox {} {}", i, j).c_str()).is_a(boombox)
+                        .set<Position>(glm::vec3{ (i * 8) - num_boomboxes_1d, -10, (j * 8) - num_boomboxes_1d })
+                        .child_of(boombox_holder);
+
+                }
+            }
+
+
             // Spawn a classic sphere grid!
             auto balls = ecs.entity("Balls")
                 .add<Rotation>()
@@ -434,49 +439,59 @@ int main() {
             set_entity_transform(e, random_vec3(-10, 10));
         }
 
-        bundle.add_entry(construct_cube_mesh(2));
 
 
         while (!glfwWindowShouldClose(renderer.get_platform_window())) {
-            float delta_time = time - last_time;
+            double delta_time = time - last_time;
             last_time = time;
-            time = float(std::chrono::duration_cast<std::chrono::milliseconds>(clock.now().time_since_epoch()).count()) * 0.001f;
+            time = double(std::chrono::duration_cast<std::chrono::nanoseconds>(clock.now().time_since_epoch()).count()) * 0.001 * 0.001 * 0.001;
             total_time -= times[times_buffer_idx % 16];
             total_time += delta_time;
             times[times_buffer_idx % 16] = delta_time;
             times_buffer_idx++;
 
 
-            static float move_speed = glfwGetKey(renderer.get_platform_window(), GLFW_KEY_LEFT_SHIFT) ? 10.0f : 5.0f;
+            float move_speed = glfwGetKey(renderer.get_platform_window(), GLFW_KEY_LEFT_SHIFT) ? 50.0f : 10.0f;
 
             if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_W)) {
-                c.position += c.get_heading() * delta_time * move_speed;
+                c.position += c.get_heading() * (float)delta_time * move_speed;
             }
 
             if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_S)) {
-                c.position -= c.get_heading() * delta_time * move_speed;
+                c.position -= c.get_heading() * (float)delta_time * move_speed;
             }
 
             if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_A)) {
-                c.position -= glm::cross(c.get_heading(), glm::vec3(0, 1, 0)) * delta_time * move_speed;
+                c.position -= glm::cross(c.get_heading(), glm::vec3(0, 1, 0)) * (float)delta_time * move_speed;
             }
 
             if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_D)) {
-                c.position += glm::cross(c.get_heading(), glm::vec3(0, 1, 0)) * delta_time * move_speed;
+                c.position += glm::cross(c.get_heading(), glm::vec3(0, 1, 0)) * (float)delta_time * move_speed;
             }
 
 
             glm::dvec2 mouse_pos = {};
             glfwGetCursorPos(renderer.get_platform_window(), &mouse_pos.x, &mouse_pos.y);
 
+            static double sensitivity = 1.0;
+            constexpr double min_sens = 0.01;
+            constexpr double max_sens = 2.0;
+            constexpr double sens_step = 0.01;
+
             static glm::dvec2 last_mouse_pos = mouse_pos;
             glm::dvec2 mouse_delta = mouse_pos - last_mouse_pos;
+            
+            mouse_delta /= (250.0 / sensitivity);
 
             last_mouse_pos = mouse_pos;
 
             if (glfwGetMouseButton(renderer.get_platform_window(), GLFW_MOUSE_BUTTON_1)) {
-                if (!ImGui::GetIO().WantCaptureMouse)
-                    c.rotation -= mouse_delta / 250.0;
+                if (!ImGui::GetIO().WantCaptureMouse) {
+                    constexpr double look_limit = (std::numbers::pi * 0.99) / 2;
+                    c.rotation.y = std::max(std::min(c.rotation.y - mouse_delta.y, look_limit), -look_limit);
+                    c.rotation.x -= mouse_delta.x;
+                }
+                    //c.rotation -= mouse_delta / 250.0;
             }
 
 
@@ -497,6 +512,8 @@ int main() {
 
             ImGui::DragFloat3("Camera Position", (float*)&c.position);
             ImGui::DragFloat2("Camera Rotation", (float*)&c.rotation, 3.14f / 360.f);
+
+            ImGui::DragScalar("Sensitivity", ImGuiDataType_Double, &sensitivity, sens_step, &min_sens, &max_sens);
 
             ImGui::EndGroup();
 

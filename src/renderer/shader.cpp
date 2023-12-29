@@ -507,45 +507,47 @@ void Shader::use() {
 
 	// This should probably not be done this way, but it's how we're doing it for now 😂
 	for (auto& [name, uniform] : uniforms) {
-		switch (uniform.type) {
-			// Let's do another macro thing here to save a lot of chars
+		if (uniform.changed) {
+			switch (uniform.type) {
+				// Let's do another macro thing here to save a lot of chars
 #define UNIFORM_TYPE(shader_type, gl_func) case ShaderDataType::shader_type: gl_func(uniform.location, 1, (GetCPrimitiveType(ShaderDataType::shader_type)*)&uniform.get<GetCType(ShaderDataType::shader_type)>()); break;
 #define MAT_UNIFORM_TYPE(shader_type, gl_func) case ShaderDataType::shader_type: gl_func(uniform.location, 1, false, (GetCPrimitiveType(ShaderDataType::shader_type)*)&uniform.get<GetCType(ShaderDataType::shader_type)>()); break;
 
-			UNIFORM_TYPE(F32, glUniform1fv);
-			UNIFORM_TYPE(F64, glUniform1dv);
-			UNIFORM_TYPE(Vec2, glUniform2fv);
-			UNIFORM_TYPE(Vec3, glUniform3fv);
+				UNIFORM_TYPE(F32, glUniform1fv);
+				UNIFORM_TYPE(F64, glUniform1dv);
+				UNIFORM_TYPE(Vec2, glUniform2fv);
+				UNIFORM_TYPE(Vec3, glUniform3fv);
 
 
-			UNIFORM_TYPE(Vec4, glUniform4fv);
+				UNIFORM_TYPE(Vec4, glUniform4fv);
 
-			MAT_UNIFORM_TYPE(Mat2, glUniformMatrix2fv);
-			MAT_UNIFORM_TYPE(Mat3, glUniformMatrix3fv);
-			MAT_UNIFORM_TYPE(Mat4, glUniformMatrix4fv);
+				MAT_UNIFORM_TYPE(Mat2, glUniformMatrix2fv);
+				MAT_UNIFORM_TYPE(Mat3, glUniformMatrix3fv);
+				MAT_UNIFORM_TYPE(Mat4, glUniformMatrix4fv);
 
-			UNIFORM_TYPE(Color, glUniform3fv);
+				UNIFORM_TYPE(Color, glUniform3fv);
 
-			UNIFORM_TYPE(I32, glUniform1iv);
-			UNIFORM_TYPE(U32, glUniform1uiv);
+				UNIFORM_TYPE(I32, glUniform1iv);
+				UNIFORM_TYPE(U32, glUniform1uiv);
 
-			UNIFORM_TYPE(Bool, glUniform1iv);
+				UNIFORM_TYPE(Bool, glUniform1iv);
 #undef UNIFORM_TYPE
 #undef MAT_UNIFORM_TYPE
 
-		default:
-			assert("UNKNOWN DATA TYPE");
+			default:
+				assert("UNKNOWN DATA TYPE");
+
+			}
+
+			auto error = glGetError();
+
+			if (error != GL_NO_ERROR) {
+				fprintf(stderr, "GL ERROR %d on Uniform %s\n", error, name.c_str());
+			}
+
+			GL_ERROR_CHECK();
 
 		}
-
-		auto error = glGetError();
-
-		if (error != GL_NO_ERROR) {
-			fprintf(stderr, "GL ERROR %d on Uniform %s\n", error, name.c_str());
-		}
-
-		GL_ERROR_CHECK();
-
 	}
 
 }

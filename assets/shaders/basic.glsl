@@ -10,7 +10,7 @@ layout(location = 3) in vec3 tangent;
 layout(location = 4) in uint transform_idx;
 layout(location = 5) in uint material_idx;
 
-layout(std430) restrict readonly buffer Transforms {
+layout(std430, binding=7) restrict readonly buffer Transforms {
 	mat4 transforms[];
 };
 
@@ -24,14 +24,10 @@ uniform float time;
 
 out flat uint material_idx_out;
 
-#step(0.001)
-#range(0, 1)
-uniform vec3 scale = vec3(1);
-
 void main() {
 	mat4 model = transforms[transform_idx];
 	mat4 mvp = vp * model;
-	vec4 vertex_pos = vec4(vertex_position * scale, 1);
+	vec4 vertex_pos = vec4(vertex_position, 1);
 
 	vertex_position_worldspace = (model * vertex_pos).xyz;
 	gl_Position = mvp * vertex_pos;
@@ -42,11 +38,13 @@ void main() {
 	vertex_uv = uv;
 
 	// Calculate TBN matrix for normal maps!
+	// TODO: Look into tangent space lighting or whatever?
 	vec3 bi_tan = cross(normal, tangent);
 	
 	vec3 T = normalize(vec3(model * vec4(tangent, 0)));
 	vec3 B = normalize(vec3(model * vec4(bi_tan, 0)));
 	vec3 N = normalize(vec3(model * vec4(normal, 0)));
+
 	TBN = mat3(T, B, N);
 }
 
@@ -85,27 +83,20 @@ uniform vec3 camera_pos;
 #range(0, .9, 0.001)
 uniform float ambient = 0.2;
 
-// Specular
-#range(0, 10, 0.01)
-uniform float shininess = 32;
-
-uniform float specular_strength = 0.5;
-
 const float PI = 3.141;
 
 uniform bool use_normal_map = true;
+uniform bool use_roughness_metallic_map = true;
 
 uniform bool render_normal_map = false;
 uniform bool render_metallic_roughness_map = false;
 uniform bool render_normals = false;
 
-uniform int num_lights = 40;
-
-layout(std430) restrict readonly buffer Lights {
+layout(std430, binding=6) restrict readonly buffer Lights {
 	Light lights[];
 };
 
-layout(std430) restrict readonly buffer Materials {
+layout(std430, binding=4) restrict readonly buffer Materials {
 	Material materials[];
 };
 
@@ -182,9 +173,20 @@ void main() {
 	float roughness = mat.metallic_roughness.y;
 
 	if (mat.metallic_roughness_texture != 0) {
-		metallic *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).b;
-		roughness *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).g;
+		if (render_metallic_roughness_map) {
+			fragColour = texture(sampler2D(mat.metallic_roughness_texture),vertex_uv); 
+			return;
+		}
+
+		if (use_roughness_metallic_map) {
+			metallic *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).b;
+			roughness *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).g;
+		} else {
+			metallic= 0;
+			roughness = 0;
+		}
 	}
+	
 
 	vec3 F0 = vec3(0.04); // approximation of F0 for dielectrics
 	F0 = mix(F0, albedo, metallic);
@@ -225,13 +227,11 @@ void main() {
 		lo += (kD * albedo / PI + specular) * radiance * n_dot_l;
 	}
 	
-
 	vec3 ambient = vec3(0.05) * albedo;
 	vec3 color = ambient + lo;
 
 	color = color / (color + vec3(1.0));
 	color = pow(color, vec3(1.0/2.2));
-
 
 	fragColour = vec4(color, 1);
 }

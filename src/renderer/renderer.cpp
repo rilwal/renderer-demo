@@ -13,12 +13,21 @@
 
 const char* glsl_version = "#version 460";
 
+
+void gl_post_call(void* ret, const char* name, GLADapiproc apiproc, int len_args, ...) {
+	uint32_t error = glad_glGetError();
+	if (error != GL_NO_ERROR) {
+		fprintf(stderr, "GL Error in %s: (%u) %s\n", name, error, gl_error_name(error).c_str());
+	}
+}
+
 // Initialize OpenGL and shit
 void Renderer::initialize() {
 	glfwInit();
 
 
 	gladLoadGL(glfwGetProcAddress);
+	gladSetGLPostCallback(gl_post_call);
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_MULTISAMPLE);
@@ -132,7 +141,7 @@ Window::Window(int width, int height, std::string title) {
 	});
 
 	glfwMakeContextCurrent(platform_window);
-	//glfwSwapInterval(0);
+	glfwSwapInterval(0);
 }
 
 Window::~Window() {
