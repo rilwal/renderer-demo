@@ -2,46 +2,11 @@
 
 layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
-struct Mesh {
-		uint num_vertices;
-		uint first_idx;
-		int base_vertex;
-		float padding_1;
-		vec3 aabb_min;
-		float padding_2;
-		vec3 aabb_max;
-		float padding_3;
-};
 
-struct RenderCommand {
-    uint count;
-    uint instance_count;
-    uint first_index;
-    int base_vertex;
-    uint base_instance;
-};
-
-layout(std430) restrict readonly buffer Meshes {
-	Mesh meshes[];
-};
-
-layout(std430) restrict writeonly buffer RenderCommands {
-    RenderCommand commands[];
-};
-
-
-struct ModelInstanceData {
-    uint count;
-    uint first_instance;
-};
-
-
-layout(std430) restrict buffer RenderData {
-    uint render_offset;
-    ModelInstanceData instance_data[];
-};
+#include "gpu_driven_renderer_includes.glsl"
 
 layout(location=0) uniform uint num_models;
+
 
 void main() {    
 	uint global_id = gl_GlobalInvocationID.x;

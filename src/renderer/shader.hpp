@@ -174,7 +174,7 @@ private:
 	
 
 	uint32_t load_shader_src(GLenum type, const char* it, int& line);
-	
+	void load_subsource(const char* it, const char* filename, int& line, std::vector<const char*>& sources, std::vector<int32_t>& lengths, std::vector<std::vector<uint8_t>>& source_buffs);
 	bool linked = false;
 
 	bool should_reload = false;

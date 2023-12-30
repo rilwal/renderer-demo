@@ -129,7 +129,7 @@ std::string consume_string(const char*& it) {
 	const char* start = it;
 	while (it && *it && *it != '\"') it++;
 
-	const char* end = it + 1;
+	const char* end = it;
 	skip_whitespace_not_nl(++it);
 
 	return std::string(start, end);

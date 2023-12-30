@@ -118,15 +118,7 @@ std::string get_next_uniform_name(const  char* it) {
 }
 
 
-// Utility function to load a shaders source
-// it should be a pointer to the first character in the string after a #type directive
-uint32_t Shader::load_shader_src(GLenum type, const char* it, int& line) {
-	// Find the next #directive
-	std::vector<const char*> sources = { "#version 450\n" };
-	std::vector<int32_t> lengths = { 13 };
-
-	int line_offset = line;
-
+void Shader::load_subsource(const char* it, const char* filename, int& line, std::vector<const char*>& sources, std::vector<int32_t>& lengths, std::vector<std::vector<uint8_t>>& source_buffs) {
 	skip_whitespace(it);
 	sources.push_back(it);
 
@@ -173,6 +165,18 @@ uint32_t Shader::load_shader_src(GLenum type, const char* it, int& line) {
 			else if (check_token(it, "#include")) {
 				// TODO: handle the include here
 				lengths.push_back(static_cast<int32_t>(it - sources[sources.size() - 1]));
+
+				consume_token(it, "#include");
+
+				std::string filename = consume_string(it);
+				std::filesystem::path shader_path = path;
+				std::filesystem::path include_path = shader_path.parent_path().string() + "/" + filename; // This syntax is so stupid haha
+
+				std::vector<uint8_t> data = load_file(include_path);
+				source_buffs.push_back(data);
+
+				load_subsource((const char*)&source_buffs[source_buffs.size() - 1][0], filename.c_str(), line, sources, lengths, source_buffs);
+
 				skip_to_newline(it);
 				skip_whitespace(it);
 
@@ -194,6 +198,23 @@ uint32_t Shader::load_shader_src(GLenum type, const char* it, int& line) {
 
 		printf("End of shader source\n");
 	}
+}
+
+
+// Utility function to load a shaders source
+// it should be a pointer to the first character in the string after a #type directive
+uint32_t Shader::load_shader_src(GLenum type, const char* it, int& line) {
+	// Find the next #directive
+	std::vector<const char*> sources = { "#version 450\n" };
+	std::vector<int32_t> lengths = { 13 };
+
+	int line_offset = line;
+	
+	// TODO:
+	// These levels of jank are no good, let's rewrite this whole class when we have time
+	std::vector<std::vector<uint8_t>> src_buffs;
+
+	load_subsource(it, path.c_str(), line, sources, lengths, src_buffs);
 
 	uint32_t shader = glCreateShader(type);
 

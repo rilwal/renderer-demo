@@ -92,41 +92,6 @@ private:
 };
 
 
-inline bool within(float a, float b, float c) {
-	return b >= a && b <= c;
-}
-
-
-// Adapted from https://bruop.github.io/frustum_culling/
-inline bool test_aabb(glm::mat4 mvp, glm::vec3 min, glm::vec3 max) {
-	glm::vec4 corners[8] = {
-		{min.x, min.y, min.z, 1.0}, // x y z
-		{max.x, min.y, min.z, 1.0}, // X y z
-		{min.x, max.y, min.z, 1.0}, // x Y z
-		{max.x, max.y, min.z, 1.0}, // X Y z
-
-		{min.x, min.y, max.z, 1.0}, // x y Z
-		{max.x, min.y, max.z, 1.0}, // X y Z
-		{min.x, max.y, max.z, 1.0}, // x Y Z
-		{max.x, max.y, max.z, 1.0}, // X Y Z
-	};
-
-	bool inside = false;
-
-	for (size_t corner_idx = 0; corner_idx < 8; corner_idx++) {
-		// Transform vertex
-		glm::vec4 corner = mvp * corners[corner_idx];
-		// Check vertex against clip space bounds
-		inside = inside ||
-			within(-corner.w, corner.x, corner.w) &&
-			within(-corner.w, corner.y, corner.w) &&
-			within(0.0f, corner.z, corner.w);
-	}
-	return inside;
-
-}
-
-
 
 // This is a tag structure to specify that a mesh is GPU Resident.
 // We will use it for materials, lights and models
@@ -140,10 +105,10 @@ struct Dirty {}; // Tag struct for dirty bois
 
 // A buffer that keeps data in sync between the GPU and the ECS
 template <typename Entity_Type, typename GPU_Type>
-class ECSGPUBuffer {
+class ECSGPUBuffer : public Buffer {
 public:
 	// TODO: Investigate STATIC vs STREAM for this kind of data
-	ECSGPUBuffer(std::function<GPU_Type(const flecs::entity&, const Entity_Type&)> convert) : m_buffer(BufferUsage::STATIC), m_convert(convert) {
+	ECSGPUBuffer(std::function<GPU_Type(const flecs::entity&, const Entity_Type&)> convert) : Buffer(BufferUsage::STATIC), m_convert(convert) {
 		m_non_resident_query = ecs.query_builder<const WorldTransform, const Entity_Type>()
 			.term<GPUResident, Entity_Type>().not_()
 			.build();
@@ -168,7 +133,7 @@ public:
 			// TODO: Check for locality etc. and don't make resident all lights all the time
 			//			(or do, lights are small maybe??)
 			//			(or don't, cache locality is worse with many lights???)
-			uint32_t addr = static_cast<uint32_t>(m_buffer.push_back(m_convert(e, value)));
+			uint32_t addr = static_cast<uint32_t>(push_back(m_convert(e, value)));
 			e.set<GPUResident, Entity_Type>({ addr });
 		});
 		ecs.defer_end();
@@ -177,7 +142,7 @@ public:
 		ecs.defer_begin();
 		m_dirty_query.each([&](flecs::entity e, const TransformComponent& transform, const Entity_Type& value, const GPUResident& resident) {
 			glm::vec3 world_pos = glm::vec3(transform[3][0], transform[3][1], transform[3][2]);
-			m_buffer.set_subdata(m_convert(e, value), resident.addr);
+			set_subdata(m_convert(e, value), resident.addr);
 
 			e.remove<Dirty, Entity_Type>();
 		});
@@ -194,21 +159,8 @@ public:
 	}
 
 
-	void bind(Ref<Shader> s, std::string name, int32_t storage_block_location) {
-		uint32_t storage_block_index = glGetProgramResourceIndex(s->get_id(), GL_SHADER_STORAGE_BLOCK, name.c_str());
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, storage_block_location, m_buffer.get_id());
-		glShaderStorageBlockBinding(s->get_id(), storage_block_index, storage_block_location);
-	}
-
-
-	void bind(uint32_t bind_point, uint32_t index) {
-		m_buffer.bind(bind_point, index);
-	}
-
-
 private:
 	std::function<GPU_Type(const flecs::entity&, const Entity_Type&)> m_convert; // convert to GPU Type
-	Buffer m_buffer;
 	flecs::query<const WorldTransform, const Entity_Type> m_non_resident_query;
 	flecs::query<const WorldTransform, const Entity_Type, const flecs::pair<GPUResident, Entity_Type>> m_dirty_query;
 	flecs::observer m_observer;
@@ -227,6 +179,7 @@ inline glm::mat4 transform_convert(const flecs::entity& e, const TransformCompon
 }
 
 
+
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
 // Limitations: All meshes must have the same vertex specification!!!
@@ -239,6 +192,8 @@ public:
 		int32_t base_vertex;
 		glm::vec3 aabb_min;
 		glm::vec3 aabb_max;
+
+		float bounding_sphere;
 		uint32_t idx;
 	};
 
@@ -261,11 +216,7 @@ public:
 		uint32_t num_vertices;
 		uint32_t first_idx;
 		int32_t base_vertex;
-		float padding_1;
-		glm::vec3 aabb_min;
-		float padding_2;
-		glm::vec3 aabb_max;
-		float padding_3;
+		float bounding_sphere;
 	};
 #pragma pack(pop)
 
@@ -322,6 +273,7 @@ public:
 		uint32_t vertex_count = static_cast<uint32_t>(m->vertices.size());
 
 		glm::vec3 min = {}, max = {}; // AABB
+		float bounding_sphere = 0;
 
 		// Now add the indices to the index buffer
 		m_index_buffer.extend(m->indices);
@@ -335,6 +287,10 @@ public:
 			if (m->vertices[i].x > max.x) max.x = m->vertices[i].x;
 			if (m->vertices[i].y > max.y) max.y = m->vertices[i].y;
 			if (m->vertices[i].z > max.z) max.z = m->vertices[i].z;
+
+			// TODO: use length ^ 2 and just square root at hte end?
+			//			Also, asset conditioning!!!
+			if (m->vertices[i].length() > bounding_sphere) bounding_sphere = m->vertices[i].length();
 
 			vertices.push_back(m->vertices[i].x);
 			vertices.push_back(m->vertices[i].y);
@@ -365,9 +321,9 @@ public:
 			}
 		}
 
-		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max, index });
+		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max, bounding_sphere, index });
 
-		GPUMesh gpu_mesh = { .num_vertices=index_count, .first_idx=cumulative_idx_count, .base_vertex=cumulative_vertex_count, .aabb_min=min, .aabb_max=max };
+		GPUMesh gpu_mesh = { .num_vertices=index_count, .first_idx=cumulative_idx_count, .base_vertex=cumulative_vertex_count, .bounding_sphere=bounding_sphere };
 		m_mesh_buffer.push_back(gpu_mesh);
 
 		cumulative_idx_count += index_count;
@@ -378,9 +334,26 @@ public:
 		return index;
 	}
 
-	inline void setup_shaders() {
+	template <uint32_t num_shaders, uint32_t num_buffers>
+	inline void setup_shaders(std::array<Ref<Shader>, num_shaders> shaders, std::array<std::string, num_buffers> buffer_names, std::array<Buffer*, num_buffers> buffers) {
 		// Binds all the buffers and uniforms for shaders
 		// TODO: figure out what to do if these buffer ids change!
+
+		uint32_t binding_location = 0;
+
+		for (uint32_t i = 0; i < num_buffers; i++) {
+			buffers[i]->bind(GL_SHADER_STORAGE_BUFFER, i);
+
+			for (uint32_t j = 0; j < num_shaders; j++) {
+				uint32_t binding_index = glGetProgramResourceIndex(shaders[j]->get_id(), GL_SHADER_STORAGE_BLOCK, buffer_names[i].c_str());
+				
+				if (binding_index != GL_INVALID_INDEX) {
+					glShaderStorageBlockBinding(shaders[j]->get_id(), binding_index, i);
+				}
+			}
+		}
+
+		/*
 		m_render_intermediate_buffer.bind(GL_SHADER_STORAGE_BUFFER, 0);
 		m_entity_buffer.bind(GL_SHADER_STORAGE_BUFFER, 1);
 		m_mesh_buffer.bind(GL_SHADER_STORAGE_BUFFER, 2);
@@ -389,6 +362,8 @@ public:
 		m_per_idx_buffer.Buffer::bind(GL_SHADER_STORAGE_BUFFER, 5);
 		lights_buffer.bind(GL_SHADER_STORAGE_BUFFER, 6);
 		m_transform_buffer.bind(GL_SHADER_STORAGE_BUFFER, 7);
+
+
 
 		glShaderStorageBlockBinding(m_entity_count_shader->get_id(), glGetProgramResourceIndex(m_entity_count_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
 		glShaderStorageBlockBinding(m_entity_count_shader->get_id(), glGetProgramResourceIndex(m_entity_count_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Entities"), 1);
@@ -404,7 +379,7 @@ public:
 		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Materials"), 4);
 		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Lights"), 6);
 		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Transforms"), 7);
-
+		*/
 	}
 
 
@@ -430,7 +405,7 @@ public:
 
 			// chance that buffer re-allocated
 			// todo: actually update only when required!
-			setup_shaders();
+			//setup_shaders();
 		}
 
 		size_t dirty_transforms = m_dirty_transform_query.count();
@@ -447,7 +422,7 @@ public:
 
 			// chance that buffer re-allocated
 			// todo: actually update only when required!
-			setup_shaders();
+			//setup_shaders();
 		}
 
 		size_t non_resident_entities = m_non_resident_entity_query.count();
@@ -478,11 +453,14 @@ public:
 
 			// chance that buffer re-allocated
 			// todo: actually update only when required!
-			setup_shaders();
+			//setup_shaders();
 		}
 
-		//setup_shaders();
+		//
 
+		setup_shaders<4, 8>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_main_shader },
+			{ "RenderData", "Entities", "Meshes", "RenderCommands", "PerInstance", "Transforms", "Lights", "Materials" },
+			{ &m_render_intermediate_buffer, &m_entity_buffer, &m_mesh_buffer, &m_command_buffer, &m_per_idx_buffer, &m_transform_buffer, &lights_buffer, &material_buffer });
 
 		if (renderer == 0) {
 			uint32_t draw_count = m_draw_query.count();
@@ -543,7 +521,7 @@ public:
 
 
 			m_main_shader->bind_ssbo("Materials", 0, material_buffer);
-			lights_buffer.bind(m_main_shader, "Lights", 1);
+			//lights_buffer.bind(m_main_shader, "Lights", 1);
 			m_main_shader->bind_ssbo("Transforms", 2, m_transform_buffer);
 
 
