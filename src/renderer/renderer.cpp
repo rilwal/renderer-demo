@@ -10,6 +10,7 @@
 #include "ImGuizmo.h"
 
 #include "util.hpp"
+#include "instrumentation/instrumentor.hpp"
 
 const char* glsl_version = "#version 460";
 
@@ -72,15 +73,17 @@ bool Renderer::should_close() {
 
 
 void Renderer::begin_frame() {
+	PROFILE_FUNC();
+
 	glfwPollEvents();
 
 	int32_t display_w, display_h;
 
 	glfwGetFramebufferSize(window, &display_w, &display_h);
 	//glViewport(0, 0, display_w, display_h);
-	glClearColor(.5f, .6f, .8f, 1.f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GL_ERROR_CHECK();
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
@@ -94,6 +97,8 @@ void Renderer::begin_frame() {
 
 
 void Renderer::end_frame() {
+	PROFILE_FUNC();
+
 	// imgui stuff
 	ImGui::EndFrame();
 	ImGui::Render();

@@ -10,6 +10,7 @@
 
 #include "buffer.hpp"
 
+#include "gl/gl.hpp"
 
 enum class TextureFilter : uint32_t {
 	Nearest = GL_NEAREST,
@@ -68,3 +69,18 @@ inline uint64_t make_bindless_texture(Ref<Image> i, Sampler s = {}) {
 
 	return handle;
 }
+
+
+
+class Texture {
+public:
+	Texture() {
+		m_gl_id = gl::create_texture(GL_TEXTURE_2D);
+	}
+
+private:
+	uint32_t m_gl_id;
+
+	gl::TextureInternalFormat m_internal_format;
+};
+

@@ -11,6 +11,7 @@
 struct VertexAttribute {
 	std::string name;
 	ShaderDataType data_type;
+	int32_t count = 1;
 	int32_t offset = 0;
 };
 

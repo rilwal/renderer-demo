@@ -35,6 +35,7 @@
 #include "renderer/vertex_buffer.hpp"
 #include "renderer/index_buffer.hpp"
 
+#include "instrumentation/instrumentor.hpp"
 
 
 void set_entity_transform(flecs::entity& e, Position translation = Position(), Rotation rotation = Rotation(), Scale scale = Scale()) {
@@ -175,12 +176,14 @@ bool EditTransform(const Camera& camera, glm::mat4& matrix)
     ImGuiIO& io = ImGui::GetIO();
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
     glm::mat4 view = camera.view();
-    return ImGuizmo::Manipulate(&view[0][0], &camera.projection[0][0], mCurrentGizmoOperation, mCurrentGizmoMode, &matrix[0][0], nullptr, nullptr);
+    glm::mat4 proj = camera.projection();
+    return ImGuizmo::Manipulate(&view[0][0], &proj[0][0], mCurrentGizmoOperation, mCurrentGizmoMode, &matrix[0][0], nullptr, nullptr);
 }
 
 
 
 void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camera) {
+    PROFILE_FUNC();
 
     if (ImGui::Begin("Entity Tree")) {
         entity_inspector_iterate(root);
@@ -323,7 +326,11 @@ int main() {
         Camera c = {};
         c.position = { 10, 10, 10 };
         c.rotation = { -3.9, -0.6 };
-        c.projection = glm::perspective(45.0, 16.0 / 9.0, 0.01, 10000.0);
+        c.fov = 45.0f;
+        c.near_clip = 0.01f;
+        c.far_clip = 10000.0f;
+
+        //c.projection = glm::perspective(45.0, 16.0 / 9.0, 0.01, 10000.0);
 
 
         std::chrono::high_resolution_clock clock = {};
@@ -351,9 +358,8 @@ int main() {
             for (int i = 0; i < num_boomboxes_1d; i++) {
                 for (int j = 0; j < num_boomboxes_1d; j++) {
                     auto n = ecs.entity(std::format("Boombox {} {}", i, j).c_str()).is_a(boombox)
-                        .set<Position>(glm::vec3{ (i * 8) - num_boomboxes_1d, -10, (j * 8) - num_boomboxes_1d })
+                        .set<Position>(glm::vec3{ (i * 8) - num_boomboxes_1d * 4, -10, (j * 8) - num_boomboxes_1d * 4 })
                         .child_of(boombox_holder);
-
                 }
             }
 
@@ -431,7 +437,7 @@ int main() {
             .set<Position>({})
             .child_of(root_node);
 
-        for (int i = 0; i < 40; i++) {
+        for (int i = 0; i < 120; i++) {
             auto e = ecs.entity(std::format("Light {}", i).c_str())
                 .child_of(lights)
                 .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
@@ -442,6 +448,9 @@ int main() {
 
 
         while (!glfwWindowShouldClose(renderer.get_platform_window())) {
+            Instrumentor::get().new_frame();
+            PROFILE_SCOPE("Render Loop");
+
             double delta_time = time - last_time;
             last_time = time;
             time = double(std::chrono::duration_cast<std::chrono::nanoseconds>(clock.now().time_since_epoch()).count()) * 0.001 * 0.001 * 0.001;
@@ -495,50 +504,62 @@ int main() {
             }
 
 
-            glm::mat4 vp = c.projection * c.view();
+            glm::mat4 vp = c.projection() * c.view();
 
-            renderer.begin_frame();
+            
+                //Instrumentor::InstrumentationEvent e("Render Loop");
+                
+                renderer.begin_frame();
 
-            draw_entity_inspector(bundle, root_node, c);
-
-
-            ImGui::Begin("Camera Controls");
-
-            ImGui::Text("%f ms (%.02f fps)", (total_time / 16.f) * 1000.f, 1.f / (total_time / 16));
-
-            ImGui::Text("%llu", bundle.get_rendered_tri_count());
-
-            ImGui::BeginGroup();
-
-            ImGui::DragFloat3("Camera Position", (float*)&c.position);
-            ImGui::DragFloat2("Camera Rotation", (float*)&c.rotation, 3.14f / 360.f);
-
-            ImGui::DragScalar("Sensitivity", ImGuiDataType_Double, &sensitivity, sens_step, &min_sens, &max_sens);
-
-            ImGui::EndGroup();
-
-            if (ImGui::Button("Spawn cube")) {
-                spawn_cube(bundle, cube_mesh);
-            }
-
-            if (ImGui::Button("Spawn sphere")) {
-                spawn_cube(bundle, sphere_mesh);
-            }
+                draw_entity_inspector(bundle, root_node, c);
 
 
-            if (ImGui::Button("Spawn Joker")) {
-                for (int i = 0; i < 1000; i++)
-                    spawn_cube(bundle, joker_mesh);
-            }
+                ImGui::Begin("Camera Controls");
+
+                ImGui::Text("%f ms (%.02f fps)", (total_time / 16.f) * 1000.f, 1.f / (total_time / 16));
+
+                ImGui::Text("%llu", bundle.get_rendered_tri_count());
+
+                ImGui::BeginGroup();
+
+                ImGui::DragFloat3("Camera Position", (float*)&c.position);
+                ImGui::DragFloat2("Camera Rotation", (float*)&c.rotation, 3.14f / 360.f);
 
 
-            ImGui::End();
+                ImGui::DragFloat2("Clips", &c.near_clip);
+                ImGui::DragFloat("FOV", &c.fov);
 
 
-            bundle.render(c);
+                ImGui::DragScalar("Sensitivity", ImGuiDataType_Double, &sensitivity, sens_step, &min_sens, &max_sens);
+
+                ImGui::EndGroup();
+
+                if (ImGui::Button("Spawn cube")) {
+                    spawn_cube(bundle, cube_mesh);
+                }
+
+                if (ImGui::Button("Spawn sphere")) {
+                    spawn_cube(bundle, sphere_mesh);
+                }
 
 
-            renderer.end_frame();
+                if (ImGui::Button("Spawn Joker")) {
+                    for (int i = 0; i < 1000; i++)
+                        spawn_cube(bundle, joker_mesh);
+                }
+
+
+                ImGui::End();
+
+
+                bundle.render(c);
+
+
+                Instrumentor::get().show_profiler();
+                renderer.end_frame();
+
+
+            
         }
     }
     renderer.shutdown();

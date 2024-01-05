@@ -80,17 +80,9 @@ struct Light {
 
 uniform vec3 camera_pos;
 
-#range(0, .9, 0.001)
-uniform float ambient = 0.2;
 
 const float PI = 3.141;
 
-uniform bool use_normal_map = true;
-uniform bool use_roughness_metallic_map = true;
-
-uniform bool render_normal_map = false;
-uniform bool render_metallic_roughness_map = false;
-uniform bool render_normals = false;
 
 layout(std430, binding=6) restrict readonly buffer Lights {
 	Light lights[];
@@ -138,15 +130,9 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
-
-
 void main() {
 	Material mat = materials[material_idx_out];
 
-	if (render_normal_map) {
-		fragColour = texture(sampler2D(mat.normal_texture), vertex_uv);
-		return;
-	}
 
 	vec3 albedo = materials[material_idx_out].diffuse_color;
 
@@ -156,37 +142,21 @@ void main() {
 
 	vec3 N = normalize(vertex_normal);
 
-	if (use_normal_map) {
-		if (mat.normal_texture != 0) {
-			N = texture(sampler2D(mat.normal_texture), vertex_uv).rgb;
-			N = N * 2.0 - 1.0;
-			N = normalize(TBN * N);
-		}
+	if (mat.normal_texture != 0) {
+		N = texture(sampler2D(mat.normal_texture), vertex_uv).rgb;
+		N = N * 2.0 - 1.0;
+		N = normalize(TBN * N);
 	}
 
-	if (render_normals) {
-		fragColour = vec4((N + vec3(1)) / 2, 1.0);
-		return;
-	}
+
 
 	float metallic = mat.metallic_roughness.x;
 	float roughness = mat.metallic_roughness.y;
 
 	if (mat.metallic_roughness_texture != 0) {
-		if (render_metallic_roughness_map) {
-			fragColour = texture(sampler2D(mat.metallic_roughness_texture),vertex_uv); 
-			return;
-		}
-
-		if (use_roughness_metallic_map) {
-			metallic *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).b;
-			roughness *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).g;
-		} else {
-			metallic= 0;
-			roughness = 0;
-		}
+		metallic *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).b;
+		roughness *= texture(sampler2D(mat.metallic_roughness_texture), vertex_uv).g;
 	}
-	
 
 	vec3 F0 = vec3(0.04); // approximation of F0 for dielectrics
 	F0 = mix(F0, albedo, metallic);
@@ -200,7 +170,7 @@ void main() {
 		float distance = length(l.position - vertex_position_worldspace);
 		float attenuation = max(0, 1.0 / (distance * distance) - 0.001);
 
-		//if (attenuation == 0) continue;
+		if (attenuation == 0) continue;
 
 		vec3 radiance = l.color * l.intensity * attenuation;
 

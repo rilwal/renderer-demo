@@ -60,6 +60,20 @@ project "imgui"
       "GLFW"
    }
 
+
+project "meshoptimizer"
+   kind "StaticLib"
+
+   files {
+      "vendor/meshoptimizer/src/*.cpp"
+   }
+
+   includedirs {
+      "vendor/meshoptimizer/src"
+   }
+
+
+
 project "rendererer-demo"
     kind "ConsoleApp" -- Console app for now, until we have some log / debugging utility.
     language "C++"
@@ -85,7 +99,8 @@ project "rendererer-demo"
       "vendor/fastgltf/include",
       "vendor/stb",
       "vendor/spng",
-      "vendor/imguizmo"
+      "vendor/imguizmo",
+      "vendor/meshoptimizer/src"
    }
 
 
@@ -94,7 +109,8 @@ project "rendererer-demo"
        "GLFW",
        "fastgltf",
        "fastgltf_simdjson",
-       "imgui"
+       "imgui",
+       "meshoptimizer"
    }
 
     filter "configurations:Debug"

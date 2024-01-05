@@ -53,6 +53,12 @@ struct GLFWwindow;
 #include "material.hpp"
 #include "camera.hpp"
 #include "light.hpp"
+#include "framebuffer.h"
+
+#include "meshoptimizer.h"
+
+
+#include "instrumentation/instrumentor.hpp"
 
 
 class Window {
@@ -218,18 +224,45 @@ public:
 		int32_t base_vertex;
 		float bounding_sphere;
 	};
+
+	struct Vertex {
+		glm::vec3 position;
+		glm::vec3 normal;
+		glm::vec2 uv;
+		glm::vec3 tan;
+	};
+
+	struct QuantizedVertex {
+		uint16_t position[3]; // halfs
+		uint32_t normal; // 10_10_10_2
+		uint16_t uv[2]; // SNORM16 * 2
+		uint16_t tan[3]; // halfs, research the best value here!
+	};
+
+	// While under development, change one by one!
+	struct QuantizedVertex2 {
+		uint16_t position[3]; // halfs
+		glm::vec3 normal;
+		glm::vec2 uv;
+		uint16_t tan[3];
+	};
 #pragma pack(pop)
+
+	struct alignas(16) GPUCullData {
+		float frustum[4];
+		float znear, zfar;
+	};
 
 	MeshBundle()
 		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1),
-		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")), material_buffer(BufferUsage::STATIC),
-		lights_buffer(light_convert), m_transform_buffer(BufferUsage::STREAM), m_render_intermediate_buffer(BufferUsage::STREAM)
+		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/no_debug_options.glsl")), material_buffer(BufferUsage::STATIC),
+		lights_buffer(light_convert), m_transform_buffer(BufferUsage::STREAM), m_render_intermediate_buffer(BufferUsage::STREAM), m_framebuffer(1920, 1080)
 	{
 		m_vertex_buffer.set_layout({
-			{"position", ShaderDataType::Vec3 },
-			{"normal", ShaderDataType::Vec3},
-			{"uv", ShaderDataType::Vec2},
-			{"tangent", ShaderDataType::Vec3}
+			{"position", ShaderDataType::F16, 3 },
+			{"normal", ShaderDataType::Vec3, 1},
+			{"uv", ShaderDataType::Vec2, 1},
+			{"tangent", ShaderDataType::F16, 3}
 		});
 
 		m_per_idx_buffer.set_layout({ { "ModelIDX", ShaderDataType::U32 }, {"MaterialIDX", ShaderDataType::U32} }, 4);
@@ -266,6 +299,7 @@ public:
 	}
 
 
+
 	MeshHandle add_entry(Ref<Mesh> m) {
 		uint32_t index = static_cast<uint32_t>(m_entries.size());
 
@@ -278,48 +312,87 @@ public:
 		// Now add the indices to the index buffer
 		m_index_buffer.extend(m->indices);
 
-		std::vector<float> vertices;
+		std::vector<Vertex> vertices;
 		for (uint32_t i = 0; i < vertex_count; i++) {
-			if (m->vertices[i].x < min.x) min.x = m->vertices[i].x;
-			if (m->vertices[i].y < min.y) min.y = m->vertices[i].y;
-			if (m->vertices[i].z < min.z) min.z = m->vertices[i].z;
+			auto& vertex = m->vertices[i];
+			if (vertex.x < min.x) min.x = vertex.x;
+			if (vertex.y < min.y) min.y = vertex.y;
+			if (vertex.z < min.z) min.z = vertex.z;
 
-			if (m->vertices[i].x > max.x) max.x = m->vertices[i].x;
-			if (m->vertices[i].y > max.y) max.y = m->vertices[i].y;
-			if (m->vertices[i].z > max.z) max.z = m->vertices[i].z;
+			if (vertex.x > max.x) max.x = vertex.x;
+			if (vertex.y > max.y) max.y = vertex.y;
+			if (vertex.z > max.z) max.z = vertex.z;
 
 			// TODO: use length ^ 2 and just square root at hte end?
 			//			Also, asset conditioning!!!
-			if (m->vertices[i].length() > bounding_sphere) bounding_sphere = m->vertices[i].length();
+			if (glm::length(vertex) > bounding_sphere) bounding_sphere = glm::length(vertex);
 
-			vertices.push_back(m->vertices[i].x);
-			vertices.push_back(m->vertices[i].y);
-			vertices.push_back(m->vertices[i].z);
+			Vertex v;
 
-			vertices.push_back(m->normals[i].x);
-			vertices.push_back(m->normals[i].y);
-			vertices.push_back(m->normals[i].z);
-
+			v.position = vertex;
+			v.normal = m->normals[i];
+			
 			if (m->uvs.size()) {
-				vertices.push_back(m->uvs[i].x);
-				vertices.push_back(m->uvs[i].y);
-			}
-			else {
-				vertices.push_back(0);
-				vertices.push_back(0);
+				v.uv = m->uvs[i];
 			}
 
 			if (m->tans.size()) {
-				vertices.push_back(m->tans[i].x);
-				vertices.push_back(m->tans[i].y);
-				vertices.push_back(m->tans[i].z);
+				v.tan = m->tans[i];
 			}
-			else {
-				vertices.push_back(0);
-				vertices.push_back(0);
-				vertices.push_back(0);
-			}
+
+			vertices.push_back(v);
 		}
+
+		// remap code, for now let's skip since our models already seem good!
+		if (0) {
+			std::vector<unsigned int> remap(index_count); // allocate temporary memory for the remap table
+			size_t remap_vertex_count = meshopt_generateVertexRemap(remap.data(), m->indices.data(), m->indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
+
+			std::vector<Vertex> reindexed_vertices;
+			std::vector<uint32_t> reindexed_indices;
+			reindexed_vertices.resize(remap_vertex_count);
+			reindexed_indices.resize(index_count);
+
+			meshopt_remapIndexBuffer(reindexed_indices.data(), m->indices.data(), index_count, remap.data());
+			meshopt_remapVertexBuffer(reindexed_vertices.data(), vertices.data(), vertex_count, sizeof(Vertex), remap.data());
+		}
+
+		std::vector<uint32_t> indices = m->indices;
+
+		meshopt_optimizeVertexCache(indices.data(), indices.data(), indices.size(), vertices.size());
+		meshopt_optimizeOverdraw(indices.data(), indices.data(), indices.size(), &vertices[0].position.x, vertex_count, sizeof(Vertex), 1.05f);
+		//meshopt_optimizeVertexFetch(vertices.data(), indices.data(), indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
+		//meshopt_optimizeVertexFetch(vertices.data(), indices.data(), indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
+		
+		std::vector<QuantizedVertex2> quantized_vertices;
+		quantized_vertices.resize(vertex_count);
+
+		for (int i = 0; i < vertex_count; i++) {
+			quantized_vertices[i].position[0] = meshopt_quantizeHalf(vertices[i].position.x);
+			quantized_vertices[i].position[1] = meshopt_quantizeHalf(vertices[i].position.y);
+			quantized_vertices[i].position[2] = meshopt_quantizeHalf(vertices[i].position.z);
+
+			quantized_vertices[i].normal = vertices[i].normal;
+			quantized_vertices[i].uv = vertices[i].uv;
+
+			quantized_vertices[i].tan[0] = meshopt_quantizeHalf(vertices[i].tan.x);
+			quantized_vertices[i].tan[1] = meshopt_quantizeHalf(vertices[i].tan.y);
+			quantized_vertices[i].tan[2] = meshopt_quantizeHalf(vertices[i].tan.z);
+
+			/*
+			quantized_vertices[i].normal =	(meshopt_quantizeUnorm(vertices[i].normal.x, 10) << 20) |
+											(meshopt_quantizeUnorm(vertices[i].normal.y, 10) << 10) |
+											 meshopt_quantizeUnorm(vertices[i].normal.z, 10);
+
+			quantized_vertices[i].uv[0] = meshopt_quantizeSnorm(vertices[i].uv.x, 16);
+			quantized_vertices[i].uv[1] = meshopt_quantizeSnorm(vertices[i].uv.y, 16);
+
+			quantized_vertices[i].tan[0] = meshopt_quantizeHalf(vertices[i].tan.x);
+			quantized_vertices[i].tan[1] = meshopt_quantizeHalf(vertices[i].tan.y);
+			quantized_vertices[i].tan[2] = meshopt_quantizeHalf(vertices[i].tan.z);
+		*/
+		}
+
 
 		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max, bounding_sphere, index });
 
@@ -329,13 +402,14 @@ public:
 		cumulative_idx_count += index_count;
 		cumulative_vertex_count += vertex_count;
 
-		m_vertex_buffer.extend(vertices);
+		m_vertex_buffer.extend(quantized_vertices);
 
 		return index;
 	}
 
 	template <uint32_t num_shaders, uint32_t num_buffers>
 	inline void setup_shaders(std::array<Ref<Shader>, num_shaders> shaders, std::array<std::string, num_buffers> buffer_names, std::array<Buffer*, num_buffers> buffers) {
+		PROFILE_FUNC();
 		// Binds all the buffers and uniforms for shaders
 		// TODO: figure out what to do if these buffer ids change!
 
@@ -353,42 +427,32 @@ public:
 			}
 		}
 
-		/*
-		m_render_intermediate_buffer.bind(GL_SHADER_STORAGE_BUFFER, 0);
-		m_entity_buffer.bind(GL_SHADER_STORAGE_BUFFER, 1);
-		m_mesh_buffer.bind(GL_SHADER_STORAGE_BUFFER, 2);
-		m_command_buffer.bind(GL_SHADER_STORAGE_BUFFER, 3);
-		material_buffer.bind(GL_SHADER_STORAGE_BUFFER, 4);
-		m_per_idx_buffer.Buffer::bind(GL_SHADER_STORAGE_BUFFER, 5);
-		lights_buffer.bind(GL_SHADER_STORAGE_BUFFER, 6);
-		m_transform_buffer.bind(GL_SHADER_STORAGE_BUFFER, 7);
-
-
-
-		glShaderStorageBlockBinding(m_entity_count_shader->get_id(), glGetProgramResourceIndex(m_entity_count_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
-		glShaderStorageBlockBinding(m_entity_count_shader->get_id(), glGetProgramResourceIndex(m_entity_count_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Entities"), 1);
-
-		glShaderStorageBlockBinding(m_build_render_command_shader->get_id(), glGetProgramResourceIndex(m_build_render_command_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
-		glShaderStorageBlockBinding(m_build_render_command_shader->get_id(), glGetProgramResourceIndex(m_build_render_command_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Meshes"), 2);
-		glShaderStorageBlockBinding(m_build_render_command_shader->get_id(), glGetProgramResourceIndex(m_build_render_command_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderCommands"), 3);
-
-		glShaderStorageBlockBinding(m_generate_per_instance_data_shader->get_id(), glGetProgramResourceIndex(m_generate_per_instance_data_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "RenderData"), 0);
-		glShaderStorageBlockBinding(m_generate_per_instance_data_shader->get_id(), glGetProgramResourceIndex(m_generate_per_instance_data_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Entities"), 1);
-		glShaderStorageBlockBinding(m_generate_per_instance_data_shader->get_id(), glGetProgramResourceIndex(m_generate_per_instance_data_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "PerInstance"), 5);
-
-		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Materials"), 4);
-		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Lights"), 6);
-		glShaderStorageBlockBinding(m_main_shader->get_id(), glGetProgramResourceIndex(m_main_shader->get_id(), GL_SHADER_STORAGE_BLOCK, "Transforms"), 7);
-		*/
 	}
 
 
 	inline void render(const Camera& camera) {
+		// TODO:
+		//	* Use a UBO for frame constants like camera parameters
+
+		PROFILE_FUNC();
+
+		//m_framebuffer.bind();
+
+		m_framebuffer.clear_color({ .5f, .6f, .7f, 1.f });
+		m_framebuffer.clear_depth();
+		
+
+		auto shader_update = [&]() {
+			setup_shaders<5, 8>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_main_shader, m_z_prepass_shader },
+				{ "RenderData", "Entities", "Meshes", "RenderCommands", "PerInstance", "Transforms", "Lights", "Materials" },
+				{ &m_render_intermediate_buffer,&m_entity_buffer,&m_mesh_buffer,&m_command_buffer,&m_per_idx_buffer,&m_transform_buffer,&lights_buffer,&material_buffer });
+		};
+
+
 		static int renderer = 0;
-		const glm::mat4 vp = camera.projection * camera.view();
+		const glm::mat4 vp = camera.projection() * camera.view();
 
 		lights_buffer.update();
-		//transform_buffer.update();
 
 		size_t non_resident_transforms = m_non_resident_transform_query.count();
 
@@ -405,7 +469,7 @@ public:
 
 			// chance that buffer re-allocated
 			// todo: actually update only when required!
-			//setup_shaders();
+			shader_update();
 		}
 
 		size_t dirty_transforms = m_dirty_transform_query.count();
@@ -422,7 +486,7 @@ public:
 
 			// chance that buffer re-allocated
 			// todo: actually update only when required!
-			//setup_shaders();
+			shader_update();
 		}
 
 		size_t non_resident_entities = m_non_resident_entity_query.count();
@@ -453,16 +517,37 @@ public:
 
 			// chance that buffer re-allocated
 			// todo: actually update only when required!
-			//setup_shaders();
+			shader_update();
 		}
 
-		//
-
-		setup_shaders<4, 8>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_main_shader },
-			{ "RenderData", "Entities", "Meshes", "RenderCommands", "PerInstance", "Transforms", "Lights", "Materials" },
-			{ &m_render_intermediate_buffer, &m_entity_buffer, &m_mesh_buffer, &m_command_buffer, &m_per_idx_buffer, &m_transform_buffer, &lights_buffer, &material_buffer });
+		
 
 		if (renderer == 0) {
+			// Prepare frustum culling data. This is basically lifted from https://github.com/zeux/niagara/blob/master/src/niagara.cpp
+			// TODO: Actually work through how this all works
+			//			I assume it somehow takes advantage of the symmetry of the frustum??
+			// Probably watching the stream will give the answer
+			static auto normalize_plane = [](glm::vec4 plane) {return plane / glm::length(glm::vec3(plane)); };
+			static Buffer cull_data_buffer;
+
+			glm::mat4 projection_transpose = glm::transpose(camera.projection());
+			glm::vec4 frustum_x = normalize_plane(projection_transpose[3] + projection_transpose[0]);
+			glm::vec4 frustum_y = normalize_plane(projection_transpose[3] + projection_transpose[1]);
+
+			GPUCullData cd;
+			cd.frustum[0] = frustum_x.x;
+			cd.frustum[1] = frustum_x.z;
+			cd.frustum[2] = frustum_y.x;
+			cd.frustum[3] = frustum_y.z;
+			cd.znear = camera.near_clip;
+			cd.zfar = camera.far_clip;
+
+			cull_data_buffer.set_data(&cd, sizeof(cd));
+
+			setup_shaders<5, 9>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_main_shader, m_z_prepass_shader },
+				{ "RenderData", "Entities", "Meshes", "RenderCommands", "PerInstance", "Transforms", "Lights", "Materials", "Cull"},
+				{ &m_render_intermediate_buffer,&m_entity_buffer,&m_mesh_buffer,&m_command_buffer,&m_per_idx_buffer,&m_transform_buffer,&lights_buffer,&material_buffer, &cull_data_buffer });
+
 			uint32_t draw_count = m_draw_query.count();
 
 
@@ -493,9 +578,18 @@ public:
 			glDispatchCompute((draw_count + 32) / 32, 1, 1);
 			glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
-			m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-			m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-			m_main_shader->use();
+
+
+
+
+
+			// DO Z Prepass
+
+			
+
+
+			//glColorMask(0, 0, 0, 0);
+			//glDepthMask(1);
 
 			m_vertex_array.bind();
 			m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
@@ -503,7 +597,27 @@ public:
 			m_per_idx_buffer.bind(1);
 			m_index_buffer.bind();
 
+			glDepthFunc(GL_LESS);
+
+			if (m_z_prepass_enabled) {
+				m_z_prepass_shader->uniforms["vp"].set<glm::mat4>(vp);
+				m_z_prepass_shader->use();
+
+				glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
+
+				glDepthFunc(GL_EQUAL);
+			}
+
+
+			m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
+			m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
+			m_main_shader->use();
+
+			
+
 			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
+
+
 		}
 		else {
 			std::vector<RenderCommand> command_list;
@@ -564,6 +678,9 @@ public:
 			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
 		}
 
+		//m_framebuffer.unbind();
+
+
 		static bool show_shader_config = true;
 
 		if (ImGui::Begin("Renderer Stats")) {
@@ -580,6 +697,8 @@ public:
 			ImGui::LabelText("Number of triangles: ", "%llu", m_rendered_tri_count);
 			//ImGui::LabelText("Number of  commands: ", "%llu", command_list.size());
 			ImGui::LabelText("Available video mem:", "%d / %d MB", available_memory / 1024, total_memory / 1024);
+
+			ImGui::Checkbox("Z Prepass", &m_z_prepass_enabled);
 
 			if (ImGui::Button("Show Shader Config")) {
 				show_shader_config = true;
@@ -632,6 +751,8 @@ private:
 	Buffer m_mesh_buffer;
 	Buffer m_entity_buffer;
 
+	Framebuffer m_framebuffer;
+
 	IndexBuffer m_index_buffer;
 
 	flecs::query<const flecs::pair<GPUResident, WorldTransform>, const Model> m_draw_query;
@@ -642,12 +763,15 @@ private:
 	flecs::query<const flecs::pair<GPUResident, WorldTransform>, const Model> m_non_resident_entity_query;
 	//flecs::query<const WorldTransform, const flecs::pair<GPUResident, WorldTransform>> m_dirty_transform_query;
 
+	bool m_z_prepass_enabled = true;
 
 
 	ECSGPUBuffer<Light, Light::Light_STD140> lights_buffer; 
 	//ECSGPUBuffer<WorldTransform, glm::mat4> transform_buffer;
 
 	Ref<Shader> m_main_shader;
+
+	Ref<Shader> m_z_prepass_shader = asset_manager.GetByPath<Shader>("assets/shaders/z_prepass.glsl");
 
 	Ref<Shader> m_entity_count_shader = asset_manager.GetByPath<Shader>("assets/shaders/entity_count.glsl");
 	Ref<Shader> m_build_render_command_shader = asset_manager.GetByPath<Shader>("assets/shaders/build_render_command.glsl");

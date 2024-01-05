@@ -45,7 +45,7 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t base_attrib) {
 
 		// First count the size of our layout
 		for (const auto& attribute : layout) {
-			size += (int32_t)getDataSize(attribute.data_type);
+			size += (int32_t)getDataSize(attribute.data_type) * attribute.count;
 		}
 
 		// Then loop over and set everything up
@@ -80,10 +80,10 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t base_attrib) {
 
 				glEnableVertexArrayAttrib(m_vao_id, index);
 				if (dt == ShaderDataType::U32 || dt == ShaderDataType::I32) {
-					glVertexArrayAttribIFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), offset);
+					glVertexArrayAttribIFormat(m_vao_id, index, GetGLPrimitiveCount(dt) * attribute.count, GetGLPrimitiveType(dt), offset);
 				}
 				else {
-					glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), false, offset);
+					glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt) * attribute.count, GetGLPrimitiveType(dt), false, offset);
 
 				}
 				
@@ -91,7 +91,7 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t base_attrib) {
 
 				attribute.offset = offset;
 
-				offset += (int32_t)getDataSize(dt);
+				offset += (int32_t)getDataSize(dt) * attribute.count;
 				index++;
 			}
 		}

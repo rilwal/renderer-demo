@@ -6,8 +6,15 @@ struct Camera {
 	glm::vec3 position;
 	glm::vec2 rotation;
 		
-	glm::mat4 projection;
 
+	float near_clip;
+	float far_clip;
+
+	float fov;
+
+	glm::mat4 projection() const {
+		return glm::perspective(glm::radians(fov), 16.f / 9.f, near_clip, far_clip);
+	}
 
 	glm::vec3 get_heading() const {
 		glm::vec4 heading = { 1, 0, 0, 0 };

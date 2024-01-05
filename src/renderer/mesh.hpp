@@ -61,6 +61,9 @@ struct Mesh : IAsset {
 	void load_from_intermediate_mesh(const IntermediateMesh& im);
 	
 
+	void deduplicate();
+
+
 	void reload() override;
 	void unload() override;
 

@@ -37,6 +37,21 @@ struct ModelInstanceData {
 };
 
 
+struct CullData {
+    float frustum[4];
+	float znear, zfar;
+};
+
+
+layout(std430) restrict readonly buffer Transforms {
+	mat4 transforms[];
+};
+
+layout(std430) restrict readonly buffer Cull {
+	CullData cull_data[];
+};
+
+
 layout(std430) restrict readonly buffer Entities {
 	Entity entities[];
 };

@@ -120,7 +120,7 @@ private:
 
 
 
-
+// This doesn't work too well, as we kind of need our enum declared anonymously within this scope to allow for Enum::VALUE syntax
 template<typename T>
 class Enum {
 public:
@@ -145,5 +145,4 @@ public:
 private:
 	T m_value;
 };
-
 

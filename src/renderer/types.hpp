@@ -11,7 +11,7 @@
 // These can be used for uniforms or VertexArray layouts
 enum class ShaderDataType {
 	Bool,
-	F32, F64,
+	F16, F32, F64,
 	Vec2, Vec3, Vec4,
 	Mat2, Mat3, Mat4,
 	Color,
@@ -31,6 +31,7 @@ enum class ShaderDataType {
 
 #define FOREACH_SHADER_DATA_TYPE(DO) \
 	DO(ShaderDataType::Bool) \
+	DO(ShaderDataType::F16) \
 	DO(ShaderDataType::F32) \
 	DO(ShaderDataType::F64) \
 	DO(ShaderDataType::Vec2) \
@@ -51,6 +52,7 @@ enum class ShaderDataType {
 
 constexpr ShaderDataType GetShaderDataType(GLenum dt) {
 	switch (dt) {
+		case GL_HALF_FLOAT: return ShaderDataType::F16;
 		case GL_FLOAT: return ShaderDataType::F32;
 		case GL_DOUBLE: return ShaderDataType::F64;
 
@@ -82,6 +84,7 @@ constexpr ShaderDataType GetShaderDataType(GLenum dt) {
 // Returns the primitive type behind the ShaderDataType
 constexpr GLenum GetGLPrimitiveType(ShaderDataType dt) {
 	switch (dt) {
+		case ShaderDataType::F16:	return GL_HALF_FLOAT;
 		case ShaderDataType::F32:	return GL_FLOAT;
 		case ShaderDataType::F64:	return GL_DOUBLE;
 
@@ -119,6 +122,7 @@ constexpr GLenum GetGLPrimitiveType(ShaderDataType dt) {
 
 constexpr size_t GetGLPrimitiveSize(GLenum t) {
 	switch (t) {
+		case GL_HALF_FLOAT: return 2;
 		case GL_FLOAT: return 4;
 		case GL_DOUBLE: return 8;
 
@@ -139,6 +143,7 @@ constexpr size_t GetGLPrimitiveSize(GLenum t) {
 // Returns the primitive count behind the ShaderDataType
 constexpr int32_t GetGLPrimitiveCount(ShaderDataType dt) {
 	switch (dt) {
+	case ShaderDataType::F16: return 1;
 	case ShaderDataType::F32:	return 1;
 	case ShaderDataType::F64:	return 1;
 
@@ -178,6 +183,7 @@ constexpr auto CreateGLType() {
 }
 
 #define SHADER_TYPE(x, y) template<> constexpr auto CreateGLType<x>() { return y(); }
+SHADER_TYPE(ShaderDataType::F16, uint16_t);
 SHADER_TYPE(ShaderDataType::F32, float);
 SHADER_TYPE(ShaderDataType::F64, double);
 
@@ -216,7 +222,7 @@ constexpr auto CreatePrim() {
 }
 
 #define SHADER_PRIMITIVE(x, y) template<> constexpr auto CreatePrim<x>() { return y(); }
-
+SHADER_PRIMITIVE(ShaderDataType::F16, uint16_t);
 SHADER_PRIMITIVE(ShaderDataType::F32, float);
 SHADER_PRIMITIVE(ShaderDataType::F64, double);
 
@@ -255,6 +261,7 @@ constexpr const char* GetDataTypeName(ShaderDataType t){
 	case ShaderDataType::U8:	return "U8";
 	case ShaderDataType::U16:	return "U16";
 	case ShaderDataType::U32:	return "U32";
+	case ShaderDataType::F16:	return "F16";
 	case ShaderDataType::F32:	return "F32";
 	case ShaderDataType::F64:	return "F64";
 	case ShaderDataType::Vec2:	return "Vec2";
