@@ -185,6 +185,30 @@ inline glm::mat4 transform_convert(const flecs::entity& e, const TransformCompon
 }
 
 
+inline uint32_t Pack_INT_2_10_10_10_REV(float x, float y, float z, float w)
+{
+	const uint32_t xs = x < 0;
+	const uint32_t ys = y < 0;
+	const uint32_t zs = z < 0;
+	const uint32_t ws = w < 0;
+	uint32_t vi =
+		ws << 31 | ((uint32_t)(w + (ws << 1)) & 1) << 30 |
+		zs << 29 | ((uint32_t)(z * 511 + (zs << 9)) & 511) << 20 |
+		ys << 19 | ((uint32_t)(y * 511 + (ys << 9)) & 511) << 10 |
+		xs << 9 | ((uint32_t)(x * 511 + (xs << 9)) & 511);
+	return vi;
+}
+
+
+inline uint32_t Pack_INT_2_10_10_10_REV(glm::vec4 val) {
+	return Pack_INT_2_10_10_10_REV(val.x, val.y, val.z, val.w);
+}
+
+
+inline uint32_t Pack_INT_2_10_10_10_REV(glm::vec3 val) {
+	return Pack_INT_2_10_10_10_REV(val.x, val.y, val.z, 0.0f);
+}
+
 
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
@@ -242,9 +266,9 @@ public:
 	// While under development, change one by one!
 	struct QuantizedVertex2 {
 		uint16_t position[3]; // halfs
-		glm::vec3 normal;
-		glm::vec2 uv;
-		uint16_t tan[3];
+		int32_t normal;
+		uint16_t uv[2];
+		int32_t tan; // Let's try 8-bit UNORMs?
 	};
 #pragma pack(pop)
 
@@ -254,15 +278,23 @@ public:
 	};
 
 	MeshBundle()
-		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1),
-		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/no_debug_options.glsl")), material_buffer(BufferUsage::STATIC),
+		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1), 
+		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")), material_buffer(BufferUsage::STATIC),
 		lights_buffer(light_convert), m_transform_buffer(BufferUsage::STREAM), m_render_intermediate_buffer(BufferUsage::STREAM), m_framebuffer(1920, 1080)
 	{
+
+		m_unquantized_vertex_buffer.set_layout({
+			{"position", ShaderDataType::F32, 3 },
+			{"normal", ShaderDataType::F32, 3},
+			{"uv", ShaderDataType::F32, 2},
+			{"tangent", ShaderDataType::F32, 3} 
+		});
+
 		m_vertex_buffer.set_layout({
 			{"position", ShaderDataType::F16, 3 },
-			{"normal", ShaderDataType::Vec3, 1},
-			{"uv", ShaderDataType::Vec2, 1},
-			{"tangent", ShaderDataType::F16, 3}
+			{"normal", ShaderDataType::UNORM1010102, 1},
+			{"uv", ShaderDataType::UNORM16, 2},
+			{"tangent", ShaderDataType::UNORM1010102, 1}
 		});
 
 		m_per_idx_buffer.set_layout({ { "ModelIDX", ShaderDataType::U32 }, {"MaterialIDX", ShaderDataType::U32} }, 4);
@@ -309,8 +341,6 @@ public:
 		glm::vec3 min = {}, max = {}; // AABB
 		float bounding_sphere = 0;
 
-		// Now add the indices to the index buffer
-		m_index_buffer.extend(m->indices);
 
 		std::vector<Vertex> vertices;
 		for (uint32_t i = 0; i < vertex_count; i++) {
@@ -361,9 +391,12 @@ public:
 
 		meshopt_optimizeVertexCache(indices.data(), indices.data(), indices.size(), vertices.size());
 		meshopt_optimizeOverdraw(indices.data(), indices.data(), indices.size(), &vertices[0].position.x, vertex_count, sizeof(Vertex), 1.05f);
-		//meshopt_optimizeVertexFetch(vertices.data(), indices.data(), indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
-		//meshopt_optimizeVertexFetch(vertices.data(), indices.data(), indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
 		
+		meshopt_optimizeVertexFetch(vertices.data(), indices.data(), indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
+
+
+
+
 		std::vector<QuantizedVertex2> quantized_vertices;
 		quantized_vertices.resize(vertex_count);
 
@@ -372,27 +405,17 @@ public:
 			quantized_vertices[i].position[1] = meshopt_quantizeHalf(vertices[i].position.y);
 			quantized_vertices[i].position[2] = meshopt_quantizeHalf(vertices[i].position.z);
 
-			quantized_vertices[i].normal = vertices[i].normal;
-			quantized_vertices[i].uv = vertices[i].uv;
+			quantized_vertices[i].normal = Pack_INT_2_10_10_10_REV(vertices[i].normal);
 
-			quantized_vertices[i].tan[0] = meshopt_quantizeHalf(vertices[i].tan.x);
-			quantized_vertices[i].tan[1] = meshopt_quantizeHalf(vertices[i].tan.y);
-			quantized_vertices[i].tan[2] = meshopt_quantizeHalf(vertices[i].tan.z);
+			quantized_vertices[i].uv[0] = meshopt_quantizeUnorm(vertices[i].uv.x, 16); //vertices[i].uv;
+			quantized_vertices[i].uv[1] = meshopt_quantizeUnorm(vertices[i].uv.y, 16); //vertices[i].uv;
 
-			/*
-			quantized_vertices[i].normal =	(meshopt_quantizeUnorm(vertices[i].normal.x, 10) << 20) |
-											(meshopt_quantizeUnorm(vertices[i].normal.y, 10) << 10) |
-											 meshopt_quantizeUnorm(vertices[i].normal.z, 10);
-
-			quantized_vertices[i].uv[0] = meshopt_quantizeSnorm(vertices[i].uv.x, 16);
-			quantized_vertices[i].uv[1] = meshopt_quantizeSnorm(vertices[i].uv.y, 16);
-
-			quantized_vertices[i].tan[0] = meshopt_quantizeHalf(vertices[i].tan.x);
-			quantized_vertices[i].tan[1] = meshopt_quantizeHalf(vertices[i].tan.y);
-			quantized_vertices[i].tan[2] = meshopt_quantizeHalf(vertices[i].tan.z);
-		*/
+			quantized_vertices[i].tan = Pack_INT_2_10_10_10_REV(vertices[i].tan);
 		}
 
+
+		// Now add the indices to the index buffer
+		m_index_buffer.extend(indices);
 
 		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max, bounding_sphere, index });
 
@@ -403,6 +426,7 @@ public:
 		cumulative_vertex_count += vertex_count;
 
 		m_vertex_buffer.extend(quantized_vertices);
+		m_unquantized_vertex_buffer.extend(vertices);
 
 		return index;
 	}
@@ -438,8 +462,8 @@ public:
 
 		//m_framebuffer.bind();
 
-		m_framebuffer.clear_color({ .5f, .6f, .7f, 1.f });
-		m_framebuffer.clear_depth();
+		//m_framebuffer.clear_color({ .5f, .6f, .7f, 1.f });
+		//m_framebuffer.clear_depth();
 		
 
 		auto shader_update = [&]() {
@@ -577,11 +601,6 @@ public:
 
 			glDispatchCompute((draw_count + 32) / 32, 1, 1);
 			glMemoryBarrier(GL_ALL_BARRIER_BITS);
-
-
-
-
-
 
 			// DO Z Prepass
 
@@ -738,6 +757,10 @@ private:
 	VertexArray m_vertex_array;
 
 	VertexBuffer m_vertex_buffer;
+
+	VertexBuffer m_unquantized_vertex_buffer;
+
+
 	VertexBuffer m_per_idx_buffer;
 
 	Buffer m_per_instance_ssb;

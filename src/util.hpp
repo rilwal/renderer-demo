@@ -51,7 +51,6 @@ std::string gl_error_name(uint32_t error_code);
 	uint32_t e = glGetError(); \
 	if(e != GL_NO_ERROR) { \
 		std::cerr << "GL ERROR " << gl_error_name(e) << " in FILE " << __FILE__ << " AT LINE " << __LINE__ << "\n";\
-		DEBUG_BREAK();\
 	}\
 }
 

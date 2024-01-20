@@ -67,7 +67,7 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t base_attrib) {
 
 					glEnableVertexArrayAttrib(m_vao_id, index + i);
 					glVertexArrayAttribFormat(m_vao_id, index + i, 4, GetGLPrimitiveType(dt), false, offset + (4 * sizeof(float)) * i);
-					glVertexArrayAttribBinding(m_vao_id, index + i, m_binding_index); // TODO: ASSUMPTION THAT IFF MAT4 Å® DIVISOR = 1 is bad
+					glVertexArrayAttribBinding(m_vao_id, index + i, m_binding_index); 
 				}
 
 				index += 4;
@@ -79,12 +79,13 @@ void VertexBuffer::set_layout(VertexBufferLayout layout, uint32_t base_attrib) {
 					m_vao_id, index, GetGLPrimitiveCount(dt), GetGLPrimitiveType(dt), offset);
 
 				glEnableVertexArrayAttrib(m_vao_id, index);
+
+
 				if (dt == ShaderDataType::U32 || dt == ShaderDataType::I32) {
 					glVertexArrayAttribIFormat(m_vao_id, index, GetGLPrimitiveCount(dt) * attribute.count, GetGLPrimitiveType(dt), offset);
 				}
 				else {
-					glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt) * attribute.count, GetGLPrimitiveType(dt), false, offset);
-
+					glVertexArrayAttribFormat(m_vao_id, index, GetGLPrimitiveCount(dt) * values_per_primitive(dt) * attribute.count, GetGLPrimitiveType(dt), is_normalized_type(dt), offset);
 				}
 				
 				glVertexArrayAttribBinding(m_vao_id, index, m_binding_index);

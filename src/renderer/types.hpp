@@ -3,9 +3,7 @@
 #include "glad/gl.h"
 #include "glm.hpp"
 
-/*
-	TODO: add support for samplers and textures
-*/
+
 
 // All the data types we can use in a shader.
 // These can be used for uniforms or VertexArray layouts
@@ -14,12 +12,16 @@ enum class ShaderDataType {
 	F16, F32, F64,
 	Vec2, Vec3, Vec4,
 	Mat2, Mat3, Mat4,
+
+	UNORM8, UNORM16,
+	UNORM1010102,
+
 	Color,
 
 	I8, U8,
 	I16, U16,
 	I32, U32,
-	//I64, U64,
+	I64, U64,
 
 	IVec2, IVec3, IVec4,
 
@@ -114,11 +116,27 @@ constexpr GLenum GetGLPrimitiveType(ShaderDataType dt) {
 
 		case ShaderDataType::Sampler2D: return GL_UNSIGNED_INT;
 
+		case ShaderDataType::UNORM1010102: return GL_INT_2_10_10_10_REV;
+
+		case ShaderDataType::UNORM8: return GL_UNSIGNED_BYTE;
+		case ShaderDataType::UNORM16: return GL_UNSIGNED_SHORT;
 	}
 
 	assert(false && "Unknown Data Type");
 	return -1;
 }
+
+constexpr bool is_normalized_type(ShaderDataType dt) {
+	switch (dt) {
+	case ShaderDataType::UNORM8:
+	case ShaderDataType::UNORM16:
+	case ShaderDataType::UNORM1010102:
+		return true;
+	}
+
+	return false;
+}
+
 
 constexpr size_t GetGLPrimitiveSize(GLenum t) {
 	switch (t) {
@@ -133,6 +151,8 @@ constexpr size_t GetGLPrimitiveSize(GLenum t) {
 		case GL_UNSIGNED_BYTE: return 1;
 		case GL_UNSIGNED_SHORT: return 2;
 		case GL_UNSIGNED_INT: return 4;
+
+		case GL_INT_2_10_10_10_REV: return 4;
 	}
 
 	assert(false && "UNKNOWN GL TYPE");
@@ -140,7 +160,26 @@ constexpr size_t GetGLPrimitiveSize(GLenum t) {
 }
 
 
-// Returns the primitive count behind the ShaderDataType
+constexpr uint32_t values_per_primitive(ShaderDataType dt) {
+	switch (GetGLPrimitiveType(dt)) {
+	case GL_INT_2_10_10_10_REV:
+	case GL_UNSIGNED_INT_2_10_10_10_REV:
+		return 4;
+
+	case GL_UNSIGNED_INT_10F_11F_11F_REV:
+		return 3;
+
+	default:
+		return 1;
+	}
+
+}
+
+
+// Returns the primitive count behind the ShaderDataType. This is the number of the primitive returned by GetGLPrimitiveType
+//		Which means that for special formats like GL_INT_2_10_10_10_REV this will NOT match, for example, the *size* attribute of 
+//		the glVertexAttribFormat family of functions which expect the amount of logical values encoded (4 in this case)
+//		multiply this by values_per_primitive(primitive_type) for the correct amount.
 constexpr int32_t GetGLPrimitiveCount(ShaderDataType dt) {
 	switch (dt) {
 	case ShaderDataType::F16: return 1;
@@ -169,12 +208,18 @@ constexpr int32_t GetGLPrimitiveCount(ShaderDataType dt) {
 	case ShaderDataType::U16:	return 1;
 	case ShaderDataType::U32:	return 1;
 
+
+	case ShaderDataType::UNORM1010102:	return 1;
+	case ShaderDataType::UNORM8: return 1;
+	case ShaderDataType::UNORM16: return 1;
+
 	case ShaderDataType::Sampler2D: return 1;
 
 	}
 	assert(false && "Unknown Data Type");
 	return -1;
 }
+
 
 template<ShaderDataType dt>
 constexpr auto CreateGLType() {
@@ -250,6 +295,8 @@ SHADER_PRIMITIVE(ShaderDataType::IVec3, int32_t);
 SHADER_PRIMITIVE(ShaderDataType::IVec4, int32_t);
 
 SHADER_PRIMITIVE(ShaderDataType::Bool, int32_t);
+
+SHADER_PRIMITIVE(ShaderDataType::UNORM1010102, int32_t);
 #undef SHADER_PRIMITIVE
 
 
