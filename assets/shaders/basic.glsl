@@ -64,6 +64,7 @@ in mat3 TBN;
 
 struct Material {
 	vec3 diffuse_color;
+	vec3 emissive_color;
 	vec2 metallic_roughness;
 	uint64_t diffuse_texture;
 	uint64_t normal_texture;
@@ -198,11 +199,12 @@ void main() {
 	for (int i = 0; i < lights.length(); i++) {
 		Light l = lights[i];
 		float distance = length(l.position - vertex_position_worldspace);
-		float attenuation = max(0, 1.0 / (distance * distance) - 0.001);
+		float attenuation = max(0, 1.0 / (distance * distance) - 0.000001);
 
 		//if (attenuation == 0) continue;
 
-		vec3 radiance = l.color * l.intensity * attenuation;
+		vec3 radiance = l.color * l.intensity  * attenuation;
+
 
 
 		vec3 L = normalize(l.position - vertex_position_worldspace);
@@ -232,7 +234,8 @@ void main() {
 	}
 	
 	vec3 ambient = vec3(0.05) * albedo;
-	vec3 color = ambient + lo;
+	vec3 color = ambient + lo + mat.emissive_color * 2;
+
 
 	color = color / (color + vec3(1.0));
 	color = pow(color, vec3(1.0/2.2));

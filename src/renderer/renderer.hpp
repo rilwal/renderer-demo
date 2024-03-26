@@ -272,11 +272,6 @@ public:
 	};
 #pragma pack(pop)
 
-	struct alignas(16) GPUCullData {
-		float frustum[4];
-		float znear, zfar;
-	};
-
 	MeshBundle()
 		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1), 
 		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")), material_buffer(BufferUsage::STATIC),
@@ -544,36 +539,7 @@ public:
 			shader_update();
 		}
 
-		
-
-		if (renderer == 0) {
-			// Prepare frustum culling data. This is basically lifted from https://github.com/zeux/niagara/blob/master/src/niagara.cpp
-			// TODO: Actually work through how this all works
-			//			I assume it somehow takes advantage of the symmetry of the frustum??
-			// Probably watching the stream will give the answer
-			static auto normalize_plane = [](glm::vec4 plane) {return plane / glm::length(glm::vec3(plane)); };
-			static Buffer cull_data_buffer;
-
-			glm::mat4 projection_transpose = glm::transpose(camera.projection());
-			glm::vec4 frustum_x = normalize_plane(projection_transpose[3] + projection_transpose[0]);
-			glm::vec4 frustum_y = normalize_plane(projection_transpose[3] + projection_transpose[1]);
-
-			GPUCullData cd;
-			cd.frustum[0] = frustum_x.x;
-			cd.frustum[1] = frustum_x.z;
-			cd.frustum[2] = frustum_y.x;
-			cd.frustum[3] = frustum_y.z;
-			cd.znear = camera.near_clip;
-			cd.zfar = camera.far_clip;
-
-			cull_data_buffer.set_data(&cd, sizeof(cd));
-
-			setup_shaders<5, 9>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_main_shader, m_z_prepass_shader },
-				{ "RenderData", "Entities", "Meshes", "RenderCommands", "PerInstance", "Transforms", "Lights", "Materials", "Cull"},
-				{ &m_render_intermediate_buffer,&m_entity_buffer,&m_mesh_buffer,&m_command_buffer,&m_per_idx_buffer,&m_transform_buffer,&lights_buffer,&material_buffer, &cull_data_buffer });
-
 			uint32_t draw_count = m_draw_query.count();
-
 
 			m_command_buffer.resize(sizeof(RenderCommand) * m_entries.size());
 			m_per_idx_buffer.resize(sizeof(PerInstanceData) * draw_count);
@@ -637,66 +603,7 @@ public:
 			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
 
 
-		}
-		else {
-			std::vector<RenderCommand> command_list;
-			std::vector<PerInstanceData> per_instance_data; // interleave mvp, model etc..
-
-
-			m_rendered_tri_count = 0;
-
-			lights_buffer.update();
-			//transform_buffer.update();
-
-			m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-			m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-			m_main_shader->use();
-
-
-			m_main_shader->bind_ssbo("Materials", 0, material_buffer);
-			//lights_buffer.bind(m_main_shader, "Lights", 1);
-			m_main_shader->bind_ssbo("Transforms", 2, m_transform_buffer);
-
-
-			uint32_t i = 0; // For instance count
-
-			uint32_t base_instance = 0;
-
-			m_draw_query.each([&](flecs::entity e, const GPUResident& transform, const Model& model) {
-				const auto& [mesh_handle, material_handle] = model.mesh;
-				auto& mesh = m_entries[mesh_handle];
-				auto& material = m_materials[material_handle];
-
-				if (!material.blend) {
-					//glm::mat4 mvp = (glm::mat4)transform * vp;
-
-					command_list.push_back({
-						mesh.num_vertices,
-						1,
-						mesh.first_idx,
-						mesh.base_vertex,
-						i++
-					});
-
-					per_instance_data.push_back({ static_cast<uint32_t>(transform.addr), material_handle });
-					m_rendered_tri_count += mesh.num_vertices / 3;
-
-				}
-				});
-
-
-			m_command_buffer.set_data(command_list);
-			m_per_idx_buffer.set_data(per_instance_data);
-
-			m_vertex_array.bind();
-			m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
-			m_vertex_buffer.bind(0);
-			m_per_idx_buffer.bind(1);
-			m_index_buffer.bind();
-
-			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, static_cast<int32_t>(command_list.size()), 0);
-		}
-
+		
 		//m_framebuffer.unbind();
 
 
@@ -712,8 +619,6 @@ public:
 
 			ImGui::SliderInt("Renderer", &renderer, 0, 1);
 
-
-			ImGui::LabelText("Number of triangles: ", "%llu", m_rendered_tri_count);
 			//ImGui::LabelText("Number of  commands: ", "%llu", command_list.size());
 			ImGui::LabelText("Available video mem:", "%d / %d MB", available_memory / 1024, total_memory / 1024);
 
@@ -732,10 +637,6 @@ public:
 	}
 
 
-	inline uint64_t get_rendered_tri_count() {
-		return m_rendered_tri_count;
-	}
-
 
 
 	Entry get_entry(uint32_t index) {
@@ -746,7 +647,6 @@ private:
 	uint32_t m_mesh_count = 0;
 	uint32_t m_material_count = 0;
 
-	uint64_t m_rendered_tri_count = 0;
 
 	uint32_t cumulative_idx_count = 0; // the cumulative idx count until now
 	int32_t cumulative_vertex_count = 0; // the cumulative vertex count
@@ -757,9 +657,7 @@ private:
 	VertexArray m_vertex_array;
 
 	VertexBuffer m_vertex_buffer;
-
 	VertexBuffer m_unquantized_vertex_buffer;
-
 
 	VertexBuffer m_per_idx_buffer;
 
@@ -781,16 +679,12 @@ private:
 	flecs::query<const flecs::pair<GPUResident, WorldTransform>, const Model> m_draw_query;
 	flecs::query<const WorldTransform> m_non_resident_transform_query;
 	flecs::query<const WorldTransform, const flecs::pair<GPUResident, WorldTransform>> m_dirty_transform_query;
-
-
 	flecs::query<const flecs::pair<GPUResident, WorldTransform>, const Model> m_non_resident_entity_query;
 	//flecs::query<const WorldTransform, const flecs::pair<GPUResident, WorldTransform>> m_dirty_transform_query;
 
 	bool m_z_prepass_enabled = true;
 
-
 	ECSGPUBuffer<Light, Light::Light_STD140> lights_buffer; 
-	//ECSGPUBuffer<WorldTransform, glm::mat4> transform_buffer;
 
 	Ref<Shader> m_main_shader;
 

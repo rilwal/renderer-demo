@@ -77,7 +77,7 @@ glm::vec3 random_vec3(float min, float max) {
 flecs::entity spawn_cube(MeshBundle& mb, Model model) {
     Model m2 = model;
     auto cube_entity = ecs.entity();
-    m2.mesh.second = mb.register_material({ random_vec3(0, 1), glm::vec2(random_float(.1f, .9f), random_float(.1f, .9f)) });
+    m2.mesh.second = mb.register_material({ random_vec3(0, 1), glm::vec3(0), glm::vec2(random_float(.1f, .9f), random_float(.1f, .9f)) });
 
     set_entity_transform(cube_entity, random_vec3(-10, 10), Rotation(glm::quat(random_vec3(-3.14f, 3.14f))), Scale(random_float(0.5f, 1.5f)));
     cube_entity.set<Model>(m2);
@@ -397,7 +397,7 @@ int main() {
             set_entity_transform(cubes);
 
             for (int i = 0; i < 100; i++) {
-                MaterialHandle material = bundle.register_material({ random_vec3(0, 1), glm::vec2(random_float(.1f, .9f), random_float(.1f, .9f)) });
+                MaterialHandle material = bundle.register_material({ random_vec3(0, 1), glm::vec3(0), glm::vec2(random_float(.1f, .9f), random_float(.1f, .9f)) });
                 Model m(cube_mesh, material);
 
                 auto cube_entity = ecs.entity(std::format("Cube {}", i).c_str())
@@ -438,11 +438,18 @@ int main() {
             .child_of(root_node);
 
         for (int i = 0; i < 120; i++) {
+            glm::vec3 color = random_vec3(0, 1);
+            float brightness = random_float(10, 100);
+            MaterialHandle mat = bundle.register_material({ .diffuse_color = color, .emissive_color = color, .metallic_roughness = {0, .01} });
+            Model model = { sphere_mesh, mat };
+
             auto e = ecs.entity(std::format("Light {}", i).c_str())
                 .child_of(lights)
-                .set<Light>({ random_vec3(0, 1) , random_float(10, 100) });
+                .set<Light>({ color , brightness })
+                .set<Model>(model);
 
-            set_entity_transform(e, random_vec3(-10, 10));
+
+            set_entity_transform(e, glm::vec3(random_float(-100, 100), random_float(-10, 10), random_float(-100, 100)));
         }
 
 
@@ -517,8 +524,6 @@ int main() {
                 ImGui::Begin("Camera Controls");
 
                 ImGui::Text("%f ms (%.02f fps)", (total_time / 16.f) * 1000.f, 1.f / (total_time / 16));
-
-                ImGui::Text("%llu", bundle.get_rendered_tri_count());
 
                 ImGui::BeginGroup();
 
