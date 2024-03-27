@@ -19,10 +19,22 @@
 template<typename T>
 using Ref = std::shared_ptr<T>;
 
+
+template<typename T>
+const auto make_ref = std::make_shared<T>;
+
+/*
 template<typename T>
 Ref<T> make_ref() {
 	return std::make_shared<T>();
 }
+
+
+template<typename T>
+Ref<T> make_ref(T& x) {
+	return std::make_shared<T>(x);
+}*/
+
 
 
 template<typename T>

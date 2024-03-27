@@ -33,10 +33,10 @@ public:
 		}
 
 		iterate_tree([](const std::string& name, Ref<InstrumentationEntry> entry, int level) {
-			entry->frames_alive = std::min(entry->frames_alive + 1, 1024ull);
+			entry->frames_alive = std::min(entry->frames_alive + 1, 60ull);
 			entry->mean_time = entry->sum_time / entry->frames_alive;
 
-			entry->circular_buffer_idx = (entry->circular_buffer_idx + 1) % 1024;
+			entry->circular_buffer_idx = (entry->circular_buffer_idx + 1) % 60;
 			entry->sum_time -= entry->durations[entry->circular_buffer_idx];
 			entry->durations[entry->circular_buffer_idx] = 0.0;
 		});
@@ -135,7 +135,7 @@ private:
 		WeakRef<InstrumentationEntry> parent = {};
 		std::map<std::string, Ref<InstrumentationEntry>> children = {};
 
-		std::array<double, 1024> durations = {}; // we will store the last 1024 durations
+		std::array<double, 60> durations = {}; // we will store the last 60 durations
 		double mean_time = 0.0; // the mean time for this event
 		double sum_time = 0.0;
 		size_t circular_buffer_idx = 0;

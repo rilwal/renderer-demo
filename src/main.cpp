@@ -193,6 +193,8 @@ void draw_entity_inspector(MeshBundle& bundle, flecs::entity root, Camera& camer
 
 
     if (ImGui::Begin("Entity Inspector")) {
+
+
         if (selected_entity.is_alive()) {
 
             ImGui::TextWrapped("%s", ecs_type_str(ecs.get_world(), selected_entity.type()));
@@ -485,6 +487,10 @@ int main() {
                 c.position += glm::cross(c.get_heading(), glm::vec3(0, 1, 0)) * (float)delta_time * move_speed;
             }
 
+
+            if (glfwGetKey(renderer.get_platform_window(), GLFW_KEY_DELETE)) {
+                selected_entity.destruct();
+            }
 
             glm::dvec2 mouse_pos = {};
             glfwGetCursorPos(renderer.get_platform_window(), &mouse_pos.x, &mouse_pos.y);

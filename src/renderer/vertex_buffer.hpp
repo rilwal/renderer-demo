@@ -44,7 +44,7 @@ public:
 		glDeleteVertexArrays(1, &m_gl_id);
 	}
 
-	operator const uint32_t() {
+	uint32_t get_id() {
 		return m_gl_id;
 	}
 

@@ -199,9 +199,9 @@ void main() {
 	for (int i = 0; i < lights.length(); i++) {
 		Light l = lights[i];
 		float distance = length(l.position - vertex_position_worldspace);
-		float attenuation = max(0, 1.0 / (distance * distance) - 0.000001);
+		float attenuation = max(0, 1.0 / (distance * distance) - .0001);
 
-		//if (attenuation == 0) continue;
+		if (attenuation == 0) continue;
 
 		vec3 radiance = l.color * l.intensity  * attenuation;
 

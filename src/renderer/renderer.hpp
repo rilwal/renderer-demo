@@ -210,6 +210,118 @@ inline uint32_t Pack_INT_2_10_10_10_REV(glm::vec3 val) {
 }
 
 
+// A class to hold render passes, and run them when possible
+class RenderGraph {
+public:
+
+private:
+
+};
+
+// Superclass "interface" for render passes
+class RenderPass {
+public:
+
+	virtual void execute() = 0;
+
+private:
+
+};
+
+using NamedBuffer = std::pair<std::string, Ref<Buffer>>;
+
+// Rasterize some geometry 
+class RasterPass : public RenderPass {
+public:
+	RasterPass(Ref<Camera> camera, Ref<Shader> shader, Ref<VertexArray> vao, std::vector<Ref<VertexBuffer>> vbos, std::vector<NamedBuffer> ssbos)
+		: m_camera(camera), m_shader(shader), m_vao(vao), m_vbos(vbos), m_ssbos(ssbos), RenderPass() {
+
+	}
+
+	void execute() override {
+		for (int i = 0; i < m_vbos.size(); i++) {
+			m_vbos[i]->bind(i);
+		}
+
+		//m_shader->use();
+		
+		glUseProgram(m_shader->get_id());
+
+		//bind_ssbos();
+		apply_camera();
+
+		m_vao->bind();
+
+		// TODO: Pass in render commands
+		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, 3, 0);
+
+	}
+
+private:
+
+	void bind_ssbos() {
+		// TODO: Check for stale buffers somehow, and don't bind them otherwise!
+		uint32_t binding_location = 0;
+
+		for (auto& [name, buffer] : m_ssbos) {
+
+			buffer->bind(GL_SHADER_STORAGE_BUFFER, binding_location++);
+
+			uint32_t binding_index = glGetProgramResourceIndex(m_shader->get_id(), GL_SHADER_STORAGE_BLOCK, name.c_str());
+
+			if (binding_index != GL_INVALID_INDEX) {
+				glShaderStorageBlockBinding(m_shader->get_id(), binding_index, binding_location);
+			}
+			
+		}
+	}
+
+	void apply_camera() {
+		glm::mat4 vp = m_camera->projection() * m_camera->view();
+		//m_shader->uniforms["vp"].set(vp);
+		//m_shader->uniforms["camera_pos"].set(m_camera->position);
+		glUniformMatrix4fv(m_shader->uniforms["vp"].location, 1, false, glm::value_ptr(vp));
+		glUniform3fv(m_shader->uniforms["camera_pos"].location, 1, glm::value_ptr(m_camera->position));
+	}
+
+
+	// If this is true, draw data should be a buffer, otherwise it comes in as a pointer
+	bool m_indirect;
+
+	Ref<Camera> m_camera;
+	Ref<Shader> m_shader;
+
+	// TODO: Consider making MeshBundle work how it sounds like it should (dumber), and use that here!
+	Ref<VertexArray> m_vao;
+	Ref<IndexBuffer> m_idx; // TODO: Make buffers good enough we don't need this!
+	std::vector<Ref<VertexBuffer>> m_vbos;
+
+	std::vector<NamedBuffer> m_ssbos;
+};
+
+/*
+// Runs a compute shader
+class ComputePass : public RenderPass {
+public:
+
+private:
+
+};
+
+
+/*
+// Run a fullscreen pass by rasterizing
+// In some scenarios a compute shader may be better!
+class FullscreenPass : public RenderPass {
+public:
+
+private:
+
+};
+*/
+
+
+
 // This represents a number of meshes in a single vertex buffer.
 // TODO: Think about a more appropriate name? (maybe renderer lol)
 // Limitations: All meshes must have the same vertex specification!!!
@@ -256,15 +368,8 @@ public:
 		glm::vec3 tan;
 	};
 
+	// TODO: Make this magical (auto quantization from some spec)
 	struct QuantizedVertex {
-		uint16_t position[3]; // halfs
-		uint32_t normal; // 10_10_10_2
-		uint16_t uv[2]; // SNORM16 * 2
-		uint16_t tan[3]; // halfs, research the best value here!
-	};
-
-	// While under development, change one by one!
-	struct QuantizedVertex2 {
 		uint16_t position[3]; // halfs
 		int32_t normal;
 		uint16_t uv[2];
@@ -273,27 +378,21 @@ public:
 #pragma pack(pop)
 
 	MeshBundle()
-		: m_vertex_array(), m_vertex_buffer(m_vertex_array), m_per_idx_buffer(m_vertex_array, 1), 
-		m_command_buffer(BufferUsage::STREAM), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")), material_buffer(BufferUsage::STATIC),
-		lights_buffer(light_convert), m_transform_buffer(BufferUsage::STREAM), m_render_intermediate_buffer(BufferUsage::STREAM), m_framebuffer(1920, 1080)
+		: m_vertex_array(make_ref<VertexArray>()), m_vertex_buffer(std::make_shared<VertexBuffer>(m_vertex_array->get_id())), m_per_idx_buffer(std::make_shared<VertexBuffer>(m_vertex_array->get_id(), 1)),
+		m_command_buffer(std::make_shared<Buffer>(BufferUsage::STREAM)), m_draw_query(), m_main_shader(asset_manager.GetByPath<Shader>("assets/shaders/basic.glsl")), material_buffer(std::make_shared<Buffer>(BufferUsage::STATIC)),
+		lights_buffer(std::make_shared<ECSGPUBuffer<Light, Light::Light_STD140>>(light_convert)), m_transform_buffer(std::make_shared<Buffer>(BufferUsage::STREAM)), m_mesh_buffer(std::make_shared<Buffer>(BufferUsage::STATIC)),
+		m_render_intermediate_buffer(std::make_shared<Buffer>(BufferUsage::STREAM)), m_framebuffer(1920, 1080), m_entity_buffer(std::make_shared<Buffer>(BufferUsage::STREAM))
 	{
 
-		m_unquantized_vertex_buffer.set_layout({
-			{"position", ShaderDataType::F32, 3 },
-			{"normal", ShaderDataType::F32, 3},
-			{"uv", ShaderDataType::F32, 2},
-			{"tangent", ShaderDataType::F32, 3} 
-		});
-
-		m_vertex_buffer.set_layout({
+		m_vertex_buffer->set_layout({
 			{"position", ShaderDataType::F16, 3 },
 			{"normal", ShaderDataType::UNORM1010102, 1},
 			{"uv", ShaderDataType::UNORM16, 2},
 			{"tangent", ShaderDataType::UNORM1010102, 1}
 		});
 
-		m_per_idx_buffer.set_layout({ { "ModelIDX", ShaderDataType::U32 }, {"MaterialIDX", ShaderDataType::U32} }, 4);
-		m_per_idx_buffer.set_per_instance(true);
+		m_per_idx_buffer->set_layout({ { "ModelIDX", ShaderDataType::U32 }, {"MaterialIDX", ShaderDataType::U32} }, 4);
+		m_per_idx_buffer->set_per_instance(true);
 
 		m_non_resident_transform_query = ecs.query_builder<const WorldTransform>().term<Model>().term<GPUResident, WorldTransform>().not_().build();
 		m_dirty_transform_query = ecs.query_builder<const WorldTransform, const flecs::pair<GPUResident, WorldTransform>>().term<Dirty, WorldTransform>().build();
@@ -321,10 +420,9 @@ public:
 
 	MaterialHandle register_material(const Material& m) {
 		m_materials.push_back(m);
-		material_buffer.push_back(m.std140());
+		material_buffer->push_back(m.std140());
 		return m_material_count++;
 	}
-
 
 
 	MeshHandle add_entry(Ref<Mesh> m) {
@@ -392,7 +490,7 @@ public:
 
 
 
-		std::vector<QuantizedVertex2> quantized_vertices;
+		std::vector<QuantizedVertex> quantized_vertices;
 		quantized_vertices.resize(vertex_count);
 
 		for (int i = 0; i < vertex_count; i++) {
@@ -415,19 +513,18 @@ public:
 		m_entries.push_back(Entry{ index_count, cumulative_idx_count, cumulative_vertex_count, min, max, bounding_sphere, index });
 
 		GPUMesh gpu_mesh = { .num_vertices=index_count, .first_idx=cumulative_idx_count, .base_vertex=cumulative_vertex_count, .bounding_sphere=bounding_sphere };
-		m_mesh_buffer.push_back(gpu_mesh);
+		m_mesh_buffer->push_back(gpu_mesh);
 
 		cumulative_idx_count += index_count;
 		cumulative_vertex_count += vertex_count;
 
-		m_vertex_buffer.extend(quantized_vertices);
-		m_unquantized_vertex_buffer.extend(vertices);
+		m_vertex_buffer->extend(quantized_vertices);
 
 		return index;
 	}
 
 	template <uint32_t num_shaders, uint32_t num_buffers>
-	inline void setup_shaders(std::array<Ref<Shader>, num_shaders> shaders, std::array<std::string, num_buffers> buffer_names, std::array<Buffer*, num_buffers> buffers) {
+	inline void setup_shaders(std::array<Ref<Shader>, num_shaders> shaders, std::array<std::string, num_buffers> buffer_names, std::array<Ref<Buffer>, num_buffers> buffers) {
 		PROFILE_FUNC();
 		// Binds all the buffers and uniforms for shaders
 		// TODO: figure out what to do if these buffer ids change!
@@ -449,7 +546,7 @@ public:
 	}
 
 
-	inline void render(const Camera& camera) {
+	inline void render(Camera& camera) {
 		// TODO:
 		//	* Use a UBO for frame constants like camera parameters
 
@@ -462,16 +559,16 @@ public:
 		
 
 		auto shader_update = [&]() {
-			setup_shaders<5, 8>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_main_shader, m_z_prepass_shader },
+			setup_shaders<5, 8>({ m_entity_count_shader, m_build_render_command_shader, m_generate_per_instance_data_shader, m_z_prepass_shader, m_main_shader },
 				{ "RenderData", "Entities", "Meshes", "RenderCommands", "PerInstance", "Transforms", "Lights", "Materials" },
-				{ &m_render_intermediate_buffer,&m_entity_buffer,&m_mesh_buffer,&m_command_buffer,&m_per_idx_buffer,&m_transform_buffer,&lights_buffer,&material_buffer });
+				{ m_render_intermediate_buffer, m_entity_buffer, m_mesh_buffer, m_command_buffer, m_per_idx_buffer, m_transform_buffer, lights_buffer, material_buffer });
 		};
 
 
 		static int renderer = 0;
 		const glm::mat4 vp = camera.projection() * camera.view();
 
-		lights_buffer.update();
+		lights_buffer->update();
 
 		size_t non_resident_transforms = m_non_resident_transform_query.count();
 
@@ -480,7 +577,7 @@ public:
 
 			ecs.defer_begin();
 			m_non_resident_transform_query.each([&](flecs::entity e, const TransformComponent& transform) {
-				size_t addr = m_transform_buffer.push_back(transform.transform);
+				size_t addr = m_transform_buffer->push_back(transform.transform);
 				uint32_t idx = static_cast<uint32_t>(addr / sizeof(glm::mat4));
 				e.set<GPUResident, WorldTransform>({ idx });
 				});
@@ -498,7 +595,7 @@ public:
 
 			ecs.defer_begin();
 			m_dirty_transform_query.each([&](flecs::entity e, const TransformComponent& transform, const GPUResident& gr) {
-				m_transform_buffer.set_subdata<glm::mat4>(transform.transform, gr.addr * sizeof(glm::mat4));
+				m_transform_buffer->set_subdata<glm::mat4>(transform.transform, gr.addr * sizeof(glm::mat4));
 				e.remove<Dirty, WorldTransform>();
 			});
 			ecs.defer_end();
@@ -521,7 +618,7 @@ public:
 				uint32_t idx = 0;
 
 				if (!material.blend) {
-					size_t address = m_entity_buffer.push_back(GPUEntity{
+					size_t address = m_entity_buffer->push_back(GPUEntity{
 						.mesh_idx = mesh.idx,
 						.material_idx = material_handle,
 						.transform_idx = static_cast<uint32_t>(transform.addr),
@@ -541,12 +638,12 @@ public:
 
 			uint32_t draw_count = m_draw_query.count();
 
-			m_command_buffer.resize(sizeof(RenderCommand) * m_entries.size());
-			m_per_idx_buffer.resize(sizeof(PerInstanceData) * draw_count);
+			m_command_buffer->resize(sizeof(RenderCommand) * m_entries.size());
+			m_per_idx_buffer->resize(sizeof(PerInstanceData) * draw_count);
 
-			m_render_intermediate_buffer.resize((m_entries.size() * 2 + 1) * sizeof(uint32_t));
+			m_render_intermediate_buffer->resize((m_entries.size() * 2 + 1) * sizeof(uint32_t));
 			constexpr uint32_t zero = 0;
-			glClearNamedBufferData(m_render_intermediate_buffer.get_id(), GL_R32UI, GL_RED, GL_UNSIGNED_INT, &zero);
+			glClearNamedBufferData(m_render_intermediate_buffer->get_id(), GL_R32UI, GL_RED, GL_UNSIGNED_INT, &zero);
 
 
 
@@ -570,37 +667,37 @@ public:
 
 			// DO Z Prepass
 
-			
-
-
-			//glColorMask(0, 0, 0, 0);
-			//glDepthMask(1);
-
-			m_vertex_array.bind();
-			m_command_buffer.bind(GL_DRAW_INDIRECT_BUFFER);
-			m_vertex_buffer.bind(0);
-			m_per_idx_buffer.bind(1);
+			//m_vertex_array->bind();
+			m_command_buffer->bind(GL_DRAW_INDIRECT_BUFFER);
+			//m_vertex_buffer->bind(0);
+			//m_per_idx_buffer->bind(1);
 			m_index_buffer.bind();
 
+
+			//RasterPass(Ref<Camera> camera, Ref<Shader> shader, Ref<VertexArray> vao, std::vector<VertexBuffer> vbos, std::vector<NamedBuffer> ssbos)
+
+			RasterPass z_prepass(std::make_shared<Camera>(camera), m_main_shader, m_vertex_array, { m_vertex_buffer, m_per_idx_buffer }, { {"Transforms", m_transform_buffer} });
+
+			RasterPass main_pass(std::make_shared<Camera>(camera), m_main_shader, m_vertex_array, { m_vertex_buffer, m_per_idx_buffer },
+				{
+					{"Transforms", m_transform_buffer},
+					{"Lights", lights_buffer},
+					{"Materials", material_buffer}
+				}
+			);
+			
+			//m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
+			//m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
+			//m_main_shader->use();
+
 			glDepthFunc(GL_LESS);
-
 			if (m_z_prepass_enabled) {
-				m_z_prepass_shader->uniforms["vp"].set<glm::mat4>(vp);
-				m_z_prepass_shader->use();
-
-				glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
-
+				z_prepass.execute();
 				glDepthFunc(GL_EQUAL);
 			}
 
-
-			m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-			m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-			m_main_shader->use();
-
-			
-
-			glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
+			main_pass.execute();
+			//glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
 
 
 		
@@ -654,23 +751,21 @@ private:
 	std::vector<Entry> m_entries = {};
 	std::vector<Material> m_materials = {};
 	
-	VertexArray m_vertex_array;
+	Ref<VertexArray> m_vertex_array;
 
-	VertexBuffer m_vertex_buffer;
-	VertexBuffer m_unquantized_vertex_buffer;
+	// TODO: these should probably not be refs,
+	//			but instead this class should be passed by ref!
+	Ref<VertexBuffer> m_vertex_buffer;
+	Ref<VertexBuffer> m_per_idx_buffer;
 
-	VertexBuffer m_per_idx_buffer;
-
-	Buffer m_per_instance_ssb;
-	Buffer m_command_buffer;
-	Buffer material_buffer;
-	Buffer m_render_intermediate_buffer;
+	Ref<Buffer> m_command_buffer;
+	Ref<Buffer> material_buffer;
+	Ref<Buffer> m_render_intermediate_buffer;
 	
-	Buffer m_transform_buffer;
+	Ref<Buffer> m_transform_buffer;
 
-
-	Buffer m_mesh_buffer;
-	Buffer m_entity_buffer;
+	Ref<Buffer> m_mesh_buffer;
+	Ref<Buffer> m_entity_buffer;
 
 	Framebuffer m_framebuffer;
 
@@ -684,7 +779,7 @@ private:
 
 	bool m_z_prepass_enabled = true;
 
-	ECSGPUBuffer<Light, Light::Light_STD140> lights_buffer; 
+	Ref<ECSGPUBuffer<Light, Light::Light_STD140>> lights_buffer; 
 
 	Ref<Shader> m_main_shader;
 
@@ -694,3 +789,4 @@ private:
 	Ref<Shader> m_build_render_command_shader = asset_manager.GetByPath<Shader>("assets/shaders/build_render_command.glsl");
 	Ref<Shader> m_generate_per_instance_data_shader = asset_manager.GetByPath<Shader>("assets/shaders/generate_per_instance_data.glsl");
 };
+
