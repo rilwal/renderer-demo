@@ -210,6 +210,69 @@ inline uint32_t Pack_INT_2_10_10_10_REV(glm::vec3 val) {
 }
 
 
+// The different depth check modes
+enum class DepthCheckMode {
+	Off,
+	Always,
+	Never,
+	Equal,
+	Less,
+	LessEqual,
+	Greater,
+	GreaterEqual
+};
+
+// A struct to represent the state of the render pipeline
+// Will expand as I need it
+struct RenderPipelineState {
+	DepthCheckMode m_depth_check_mode = DepthCheckMode::Less;
+
+	void apply() {
+		// Use static variables to keep track of current pipeline state.
+		// Consider static RenderPipelineState current_state?
+		static DepthCheckMode s_current_depth_check_mode = DepthCheckMode::Less;
+
+		if (s_current_depth_check_mode != m_depth_check_mode) {
+			using enum DepthCheckMode;
+
+			if (s_current_depth_check_mode == Off) {
+				glEnable(GL_DEPTH_TEST);
+			}
+
+			switch (m_depth_check_mode) {
+			case Off:
+				glDisable(GL_DEPTH_TEST);
+				break;
+			case Always:
+				glDepthFunc(GL_ALWAYS);
+				break;
+			case Never:
+				glDepthFunc(GL_NEVER);
+				break;
+			case Equal:
+				glDepthFunc(GL_EQUAL);
+				break;
+			case Less:
+				glDepthFunc(GL_LESS);
+				break;
+			case LessEqual:
+				glDepthFunc(GL_LEQUAL);
+				break;
+			case Greater:
+				glDepthFunc(GL_GREATER);
+				break;
+			case GreaterEqual:
+				glDepthFunc(GL_GEQUAL);
+				break;
+
+			}
+
+			s_current_depth_check_mode = m_depth_check_mode;
+		}
+	}
+};
+
+
 // A class to hold render passes, and run them when possible
 class RenderGraph {
 public:
@@ -224,6 +287,7 @@ public:
 
 	virtual void execute() = 0;
 
+	RenderPipelineState m_pipeline_state;
 private:
 
 };
@@ -239,6 +303,8 @@ public:
 	}
 
 	void execute() override {
+		m_pipeline_state.apply();
+
 		for (int i = 0; i < m_vbos.size(); i++) {
 			m_vbos[i]->bind(i);
 		}
@@ -636,73 +702,57 @@ public:
 			shader_update();
 		}
 
-			uint32_t draw_count = m_draw_query.count();
+		uint32_t draw_count = m_draw_query.count();
 
-			m_command_buffer->resize(sizeof(RenderCommand) * m_entries.size());
-			m_per_idx_buffer->resize(sizeof(PerInstanceData) * draw_count);
+		m_command_buffer->resize(sizeof(RenderCommand) * m_entries.size());
+		m_per_idx_buffer->resize(sizeof(PerInstanceData) * draw_count);
 
-			m_render_intermediate_buffer->resize((m_entries.size() * 2 + 1) * sizeof(uint32_t));
-			constexpr uint32_t zero = 0;
-			glClearNamedBufferData(m_render_intermediate_buffer->get_id(), GL_R32UI, GL_RED, GL_UNSIGNED_INT, &zero);
+		m_render_intermediate_buffer->resize((m_entries.size() * 2 + 1) * sizeof(uint32_t));
+		constexpr uint32_t zero = 0;
+		glClearNamedBufferData(m_render_intermediate_buffer->get_id(), GL_R32UI, GL_RED, GL_UNSIGNED_INT, &zero);
 
+		m_entity_count_shader->uniforms["num_entities"].set<uint32_t>(draw_count);
+		m_entity_count_shader->use();
 
+		glDispatchCompute((draw_count + 32) / 32, 1, 1);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-			m_entity_count_shader->uniforms["num_entities"].set<uint32_t>(draw_count);
-			m_entity_count_shader->use();
+		m_build_render_command_shader->uniforms["num_models"].set<uint32_t>(m_entries.size());
+		m_build_render_command_shader->use();
 
-			glDispatchCompute((draw_count + 32) / 32, 1, 1);
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		glDispatchCompute((m_entries.size() + 32) / 32, 1, 1);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		
+		m_generate_per_instance_data_shader->uniforms["num_entities"].set<uint32_t>(draw_count);
+		m_generate_per_instance_data_shader->use();
 
-			m_build_render_command_shader->uniforms["num_models"].set<uint32_t>(m_entries.size());
-			m_build_render_command_shader->use();
+		glDispatchCompute((draw_count + 32) / 32, 1, 1);
+		glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
-			glDispatchCompute((m_entries.size() + 32) / 32, 1, 1);
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		m_command_buffer->bind(GL_DRAW_INDIRECT_BUFFER);
+		m_index_buffer.bind();
 
-			m_generate_per_instance_data_shader->uniforms["num_entities"].set<uint32_t>(draw_count);
-			m_generate_per_instance_data_shader->use();
+		RasterPass z_prepass(std::make_shared<Camera>(camera), m_z_prepass_shader, m_vertex_array, { m_vertex_buffer, m_per_idx_buffer }, { {"Transforms", m_transform_buffer} });
 
-			glDispatchCompute((draw_count + 32) / 32, 1, 1);
-			glMemoryBarrier(GL_ALL_BARRIER_BITS);
+		z_prepass.m_pipeline_state.m_depth_check_mode = DepthCheckMode::Less;
 
-			// DO Z Prepass
-
-			//m_vertex_array->bind();
-			m_command_buffer->bind(GL_DRAW_INDIRECT_BUFFER);
-			//m_vertex_buffer->bind(0);
-			//m_per_idx_buffer->bind(1);
-			m_index_buffer.bind();
-
-
-			//RasterPass(Ref<Camera> camera, Ref<Shader> shader, Ref<VertexArray> vao, std::vector<VertexBuffer> vbos, std::vector<NamedBuffer> ssbos)
-
-			RasterPass z_prepass(std::make_shared<Camera>(camera), m_main_shader, m_vertex_array, { m_vertex_buffer, m_per_idx_buffer }, { {"Transforms", m_transform_buffer} });
-
-			RasterPass main_pass(std::make_shared<Camera>(camera), m_main_shader, m_vertex_array, { m_vertex_buffer, m_per_idx_buffer },
-				{
-					{"Transforms", m_transform_buffer},
-					{"Lights", lights_buffer},
-					{"Materials", material_buffer}
-				}
-			);
-			
-			//m_main_shader->uniforms["vp"].set<glm::mat4>(vp);
-			//m_main_shader->uniforms["camera_pos"].set<glm::vec3>(camera.position);
-			//m_main_shader->use();
-
-			glDepthFunc(GL_LESS);
-			if (m_z_prepass_enabled) {
-				z_prepass.execute();
-				glDepthFunc(GL_EQUAL);
+		RasterPass main_pass(std::make_shared<Camera>(camera), m_main_shader, m_vertex_array, { m_vertex_buffer, m_per_idx_buffer },
+			{
+				{"Transforms", m_transform_buffer},
+				{"Lights", lights_buffer},
+				{"Materials", material_buffer}
 			}
+		);
 
-			main_pass.execute();
-			//glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, m_entries.size(), 0);
+		main_pass.m_pipeline_state.m_depth_check_mode = m_z_prepass_enabled ? DepthCheckMode::Equal : DepthCheckMode::Less;
+		
+		if (m_z_prepass_enabled) {
+			z_prepass.execute();
+		}
 
-
+		main_pass.execute();
 		
 		//m_framebuffer.unbind();
-
 
 		static bool show_shader_config = true;
 
