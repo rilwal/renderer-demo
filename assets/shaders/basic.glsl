@@ -199,7 +199,7 @@ void main() {
 	for (int i = 0; i < lights.length(); i++) {
 		Light l = lights[i];
 		float distance = length(l.position - vertex_position_worldspace);
-		float attenuation = max(0, 1.0 / (distance * distance) - .0001);
+		float attenuation = max(0, 1.0 / (distance * distance) - .000001);
 
 		if (attenuation == 0) continue;
 
@@ -233,12 +233,12 @@ void main() {
 		lo += (kD * albedo / PI + specular) * radiance * n_dot_l;
 	}
 	
-	vec3 ambient = vec3(0.05) * albedo;
+	vec3 ambient = vec3(0.1) * albedo;
 	vec3 color = ambient + lo + mat.emissive_color * 2;
 
 
-	color = color / (color + vec3(1.0));
-	color = pow(color, vec3(1.0/2.2));
+	//color = color / (color + vec3(1.0));
+	//color = pow(color, vec3(1.0/2.2));
 
 	fragColour = vec4(color, 1);
 }

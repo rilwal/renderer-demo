@@ -212,6 +212,7 @@ inline uint32_t Pack_INT_2_10_10_10_REV(glm::vec3 val) {
 
 // The different depth check modes
 enum class DepthCheckMode {
+	DontCare,
 	Off,
 	Always,
 	Never,
@@ -225,51 +226,82 @@ enum class DepthCheckMode {
 // A struct to represent the state of the render pipeline
 // Will expand as I need it
 struct RenderPipelineState {
+
+	// Null references mean DONT_CARE, not unbind!
+	// TODO: Further decide how to deal with VAO, VBO, IndexBuffer etc.
+	//			Perhaps we should fix the MeshBundle class to provide these as the name suggests it should
+	//			Furthermore it might be better to just use an optional int32_t with the GL ID? 
+	//				+ Simpler
+	//				- Not resillient if ID changes
+	Ref<VertexArray> m_vao = {};
+
 	DepthCheckMode m_depth_check_mode = DepthCheckMode::Less;
 
 	void apply() {
-		// Use static variables to keep track of current pipeline state.
-		// Consider static RenderPipelineState current_state?
-		static DepthCheckMode s_current_depth_check_mode = DepthCheckMode::Less;
+		apply_depth_check_mode();
+		apply_vao();
 
-		if (s_current_depth_check_mode != m_depth_check_mode) {
-			using enum DepthCheckMode;
+	}
 
-			if (s_current_depth_check_mode == Off) {
-				glEnable(GL_DEPTH_TEST);
+private:
+
+	void apply_vao() {
+		static Ref<VertexArray> s_current_vao = {};
+
+		if (m_vao) {
+			if (s_current_vao != m_vao) {
+				m_vao->bind();
 			}
-
-			switch (m_depth_check_mode) {
-			case Off:
-				glDisable(GL_DEPTH_TEST);
-				break;
-			case Always:
-				glDepthFunc(GL_ALWAYS);
-				break;
-			case Never:
-				glDepthFunc(GL_NEVER);
-				break;
-			case Equal:
-				glDepthFunc(GL_EQUAL);
-				break;
-			case Less:
-				glDepthFunc(GL_LESS);
-				break;
-			case LessEqual:
-				glDepthFunc(GL_LEQUAL);
-				break;
-			case Greater:
-				glDepthFunc(GL_GREATER);
-				break;
-			case GreaterEqual:
-				glDepthFunc(GL_GEQUAL);
-				break;
-
-			}
-
-			s_current_depth_check_mode = m_depth_check_mode;
 		}
 	}
+
+	void apply_depth_check_mode() {
+		using enum DepthCheckMode;
+
+		static DepthCheckMode s_current_depth_check_mode = Less;
+
+		if (m_depth_check_mode != DontCare) {
+			if (s_current_depth_check_mode != m_depth_check_mode) {
+
+				if (s_current_depth_check_mode == Off) {
+					glEnable(GL_DEPTH_TEST);
+				}
+
+				switch (m_depth_check_mode) {
+				case Off:
+					glDisable(GL_DEPTH_TEST);
+					break;
+				case Always:
+					glDepthFunc(GL_ALWAYS);
+					break;
+				case Never:
+					glDepthFunc(GL_NEVER);
+					break;
+				case Equal:
+					glDepthFunc(GL_EQUAL);
+					break;
+				case Less:
+					glDepthFunc(GL_LESS);
+					break;
+				case LessEqual:
+					glDepthFunc(GL_LEQUAL);
+					break;
+				case Greater:
+					glDepthFunc(GL_GREATER);
+					break;
+				case GreaterEqual:
+					glDepthFunc(GL_GEQUAL);
+					break;
+
+				}
+
+				s_current_depth_check_mode = m_depth_check_mode;
+			}
+		}
+
+	}
+
+
 };
 
 
@@ -309,9 +341,11 @@ public:
 			m_vbos[i]->bind(i);
 		}
 
-		//m_shader->use();
+
+		// TODO: clean up all the uniform related stuff!
+		m_shader->use();
 		
-		glUseProgram(m_shader->get_id());
+		//glUseProgram(m_shader->get_id());
 
 		//bind_ssbos();
 		apply_camera();

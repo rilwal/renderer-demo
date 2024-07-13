@@ -451,7 +451,7 @@ int main() {
                 .set<Model>(model);
 
 
-            set_entity_transform(e, glm::vec3(random_float(-100, 100), random_float(-10, 10), random_float(-100, 100)));
+            set_entity_transform(e, glm::vec3(random_float(-100, 100), random_float(-10, 30), random_float(-100, 100)), Rotation(), Scale(brightness/100.f));
         }
 
 
@@ -569,7 +569,16 @@ int main() {
                 Instrumentor::get().show_profiler();
                 renderer.end_frame();
 
-
+                ecs.defer_begin();
+                lights.children([&](flecs::entity e) {
+                    const Position* pp = e.get<Position>();
+                    if (pp) {
+                        Position p = *pp;
+                        p.position.y = sin(time);
+                        e.set<Position>(p);
+                    }
+                });
+                ecs.defer_end();
             
         }
     }
